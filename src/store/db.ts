@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, join, resolve } from "node:path";
 import Database from "better-sqlite3";
@@ -41,39 +41,52 @@ export interface OpenOptions {
 
 export function openDB(repoRoot: string, opts: OpenOptions = {}): DB {
     const path = dbPathForRepo(repoRoot);
-    if (opts.fresh && existsSync(path)) rmSync(path, { force: true });
+    if (opts.fresh) removeDbFiles(path);
 
-    let db = init(path);
+    let db = openConn(path);
+
+    /** Check the stored schema version on a bare connection, before applying
+    SCHEMA_SQL: a stale schema may lack columns the new schema indexes. */
     const version = readSchemaVersion(db);
     if (version !== null && version !== SCHEMA_VERSION) {
-        // Built by an incomplete schema migration? Delete and start fresh.
         db.close();
-        rmSync(path, { force: true });
-        db = init(path);
+        removeDbFiles(path);
+        db = openConn(path);
     }
+
+    db.exec(SCHEMA_SQL); // safe: file is fresh, or already at the current version
     writeSchemaVersion(db);
     return db;
 }
 
-function init(path: string): DB {
+function openConn(path: string): DB {
     const db = new Database(path);
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
     db.pragma("foreign_keys = ON");
-    db.exec(SCHEMA_SQL);
     return db;
 }
 
 function readSchemaVersion(db: DB): number | null {
-    const row = db
-        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
-        .get() as { value: string } | undefined;
-    return row ? Number(row.value) : null;
+    try {
+        const row = db
+            .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+            .get() as { value: string } | undefined;
+        return row ? Number(row.value) : null;
+    } catch {
+        return null; // meta table doesn't exist yet (brand-new file)
+    }
 }
 
 function writeSchemaVersion(db: DB): void {
     db.prepare(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?) " + 
+        "INSERT INTO meta(key, value) VALUES('schema_version', ?) " +
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     ).run(SCHEMA_VERSION.toString());
+}
+
+function removeDbFiles(path: string): void {
+    for (const suffix of ["", "-wal", "-shm"]) {
+        rmSync(path + suffix, { force: true });
+    }
 }

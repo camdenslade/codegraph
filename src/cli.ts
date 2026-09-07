@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { ingest } from "./ingest/index.js";
 import { getStats, type Stats } from "./query/stats.js";
+import { getSkeleton } from "./query/skeleton.js";
 
 const program = new Command();
 program
@@ -16,8 +17,8 @@ program
     .action((path: string) => {
         const r = ingest(path, { fresh: true }); // FR-CLI-1: ingest is always a full build
         console.log(
-            `parsed ${r.filesParsed}/${r.filesDiscovered} files · ` +
-            `${r.nodeCount} nodes · ${r.filesErrored} errors · ${r.elapsedMs}ms`,
+            `parsed ${r.filesParsed}/${r.filesDiscovered} files · ${r.nodeCount} nodes · ` +
+            `${r.edgeCount} edges · ${r.unresolvedCount} unresolved · ${r.filesErrored} errors · ${r.elapsedMs}ms`,
         );
 });
 
@@ -28,6 +29,25 @@ program
     .action((path: string) => {
         printStats(getStats(path));
 });
+
+program
+    .command("skeleton")
+    .description("module grapg + per-module exports (FR-SLICE-6)")
+    .argument("[path]", "repo root", ".")
+    .option("--json", "emit JSON instead of text", false)
+    .action((path: string, opts: { json:boolean }) => {
+        const sk = getSkeleton(path);
+        if (opts.json) {
+            console.log(JSON.stringify(sk, null, 2));
+            return;
+        }
+        for (const m of sk.modules) {
+            console.log(m.path);
+            for (const name of m.exports) console.log(`  · ${name}`);
+        }
+        console.log(`\nimports (${sk.imports.length})`);
+        for (const e of sk.imports) console.log(`  ${e.fromPath} -> ${e.toPath}`);
+    })
 
 program.parse();
 

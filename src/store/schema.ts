@@ -3,7 +3,7 @@
  *  This is used to create the database and to validate the data in the database.
  *  Bump SCHEMA_VERSION on any change; a mismatch triggers a full rebuild.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = /* sql */ `
 CREATE TABLE IF NOT EXISTS meta (
@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     span_start INTEGER NOT NULL,
     span_end INTEGER NOT NULL,
     signature TEXT,
-    doc TEXT
+    doc TEXT,
+    exported INTEGER NOT NULL DEFAULT 0
 );
 
 -- Static relationships between nodes.
@@ -67,4 +68,5 @@ CREATE INDEX IF NOT EXISTS idx_nodes_qualified_name ON nodes(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file);
 CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
 CREATE INDEX IF NOT EXISTS idx_unresolved_node_id ON unresolved(node_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_exported ON nodes(exported);
 `;

@@ -6,6 +6,7 @@ import ignore from "ignore";
 export interface Discovered {
     repoRoot: string;
     tsconfigPath: string;
+    options: ts.CompilerOptions;
     files: string[];
 }
 
@@ -41,7 +42,7 @@ export function discoverFiles(repoRoot: string): Discovered {
         .map((f) => resolve(f))
         .sort();
 
-    return { repoRoot: root, tsconfigPath: resolve(tsconfigPath), files };
+    return { repoRoot: root, tsconfigPath: resolve(tsconfigPath), options: parsed.options, files };
 }
 
 function loadGitIgnore(root: string) {

@@ -1,8 +1,4 @@
-import { extname } from "node:path";
-import Parser from "tree-sitter";
-import TypeScript from "tree-sitter-typescript";
-
-type SyntaxNode = Parser.SyntaxNode;
+import { parseFile, type SyntaxNode } from "./ts-parser.js"
 
 export type SymbolKind =
   | "function"
@@ -30,16 +26,9 @@ export interface StructuralResult {
   symbols: RawSymbol[];
 }
 
-const parser = new Parser();
-
-function languageFor(file: string): unknown {
-  return extname(file) === ".tsx" ? TypeScript.tsx : TypeScript.typescript;
-}
-
 /** Parse one file's text into a flat list of declared symbols. */
 export function structuralParse(file: string, source: string): StructuralResult {
-  parser.setLanguage(languageFor(file));
-  const tree = parser.parse(source);
+  const tree = parseFile(file, source);;
   const symbols: RawSymbol[] = [];
   for (const child of tree.rootNode.namedChildren) {
     visitTopLevel(child, source, symbols);
