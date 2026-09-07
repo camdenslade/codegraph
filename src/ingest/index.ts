@@ -16,6 +16,9 @@ import { discoverFiles } from "./discover.js";
 import { extractImports, type ImportRef } from "./imports.js";
 import { createModuleResolver } from "./resolve-module.js";
 import { structuralParse } from "./structural.js";
+import { createProgram } from "./program.js";
+import { semanticPass } from "./semantic.js";
+import { createSymbolIndex } from "./symbol-index.js";
 
 export interface IngestOptions {
   fresh?: boolean;
@@ -88,6 +91,7 @@ export function ingest(repoRoot: string, opts: IngestOptions = {}): IngestReport
       } else {
         importUnresolved.push({
           nodeId: srcId,
+          kind: "import",
           text: ref.specifier,
           file: relPath,
           line: ref.line,
@@ -97,6 +101,26 @@ export function ingest(repoRoot: string, opts: IngestOptions = {}): IngestReport
   }
   persistEdges(db, importEdges);
   persistUnresolved(db, importUnresolved);
+
+  // Pass 3: semantic edges (CALLS / REFERENCES / EXTENDS / IMPLEMENTS).
+  const bundle = createProgram(discovered.files, discovered.options);
+  const allIds = (db.prepare(`SELECT id FROM nodes`).all() as { id: string }[]).map(
+    (r) => r.id,
+  );
+  const symbolIndex = createSymbolIndex(root, allIds);
+
+  const nameIndex = new Map<string, string[]>();
+  for (const row of db
+    .prepare(`SELECT id, name FROM nodes WHERE kind IN ('function', 'method')`)
+    .all() as { id: string; name: string }[]) {
+      const arr = nameIndex.get(row.name) ?? [];
+      arr.push(row.id);
+      nameIndex.set(row.name, arr);
+    }
+
+    const semantic = semanticPass(bundle, symbolIndex, root, nameIndex);
+    persistEdges(db, semantic.edges);
+    persistUnresolved(db, semantic.unresolved);
 
   // Metadata + counts.
   const elapsedMs = Math.round(performance.now() - started);

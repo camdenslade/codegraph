@@ -3,7 +3,7 @@
  *  This is used to create the database and to validate the data in the database.
  *  Bump SCHEMA_VERSION on any change; a mismatch triggers a full rebuild.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = /* sql */ `
 CREATE TABLE IF NOT EXISTS meta (
@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE TABLE IF NOT EXISTS unresolved (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'call',
     text TEXT NOT NULL,
     file TEXT NOT NULL,
     line INTEGER NOT NULL

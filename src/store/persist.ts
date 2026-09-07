@@ -29,8 +29,11 @@ export interface EdgeRow {
   line: number;
 }
 
+export type UnresolvedKind = "import" | "call" | "heritage" | "reference";
+
 export interface UnresolvedRow {
   nodeId: string;
+  kind: UnresolvedKind;
   text: string;
   file: string;
   line: number;
@@ -145,11 +148,18 @@ export function persistEdges(db: DB, rows: EdgeRow[]): void {
 
 export function persistUnresolved(db: DB, rows: UnresolvedRow[]): void {
   const insert = db.prepare(
-    `INSERT INTO unresolved (node_id, text, file, line) VALUES (@node_id, @text, @file, @line)`,
+    `INSERT INTO unresolved (node_id, kind, text, file, line)
+     VALUES (@node_id, @kind, @text, @file, @line)`,
   );
   const run = db.transaction((rs: UnresolvedRow[]) => {
     for (const r of rs) {
-      insert.run({ node_id: r.nodeId, text: r.text, file: r.file, line: r.line });
+      insert.run({
+        node_id: r.nodeId,
+        kind: r.kind,
+        text: r.text,
+        file: r.file,
+        line: r.line,
+      });
     }
   });
   run(rows);

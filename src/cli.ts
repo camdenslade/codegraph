@@ -66,9 +66,23 @@ function printStats(s: Stats): void {
     line("resolved", s.resolvedEdges);
     line("heuristic", s.heuristicEdges);
     line("unresolved", s.unresolvedCount);
+    for (const [k, n] of Object.entries(s.unresolvedByKind).sort()) {
+        line(`  ${k}`, n);
+    }
     line(
         "rate",
         s.resolutionRate === null ? "n/a" : `${(s.resolutionRate * 100).toFixed(1)}%`,
+    );
+
+    console.log(`\ncalls (SC-3)`);
+    line("resolved", s.callsResolved);
+    line("heuristic", s.callsHeuristic);
+    line("unresolved", s.callsUnresolved);
+    line(
+        "rate",
+        s.callResolutionRate === null
+            ? "n/a"
+            : `${(s.callResolutionRate * 100).toFixed(1)}%`
     );
 
     console.log(`\nhealth`);

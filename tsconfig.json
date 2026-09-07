@@ -17,5 +17,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test/fixtures"]
+  "exclude": ["node_modules", "dist", "test/fixtures", "scratch.ts"]
 }
