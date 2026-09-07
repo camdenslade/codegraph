@@ -1,5 +1,5 @@
 /**
- *  The full database schema for the CodeGraph database. 
+ *  The full database schema for the CodeGraph database.
  *  This is used to create the database and to validate the data in the database.
  *  Bump SCHEMA_VERSION on any change; a mismatch triggers a full rebuild.
  */
