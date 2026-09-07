@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { ingest } from "./ingest/index.js";
+import { incrementalUpdate } from "./ingest/incremental.js";
+import { watchRepo } from "./ingest/watch.js";
 import { findPath, type FindPathResult } from "./query/path.js";
 import { findSymbol } from "./query/find-symbol.js";
 import { getNeighborhood, type Direction } from "./query/neighborhood.js";
@@ -50,6 +52,27 @@ program
 		console.log(
 			`parsed ${r.filesParsed}/${r.filesDiscovered} files · ${r.nodeCount} nodes · ` +
 				`${r.edgeCount} edges · ${r.unresolvedCount} unresolved · ${r.filesErrored} errors · ${r.elapsedMs}ms`,
+		);
+	});
+
+program
+	.command("refresh")
+	.description("incremental update: reparse only changed/added/removed files")
+	.argument("[path]", "repo root", ".")
+	.option("--watch", "keep running, re-refresh on file changes (debounced)")
+	.action(async (path: string, opts: { watch?: boolean }) => {
+		if (opts.watch) {
+			await watchRepo(path);
+			return;
+		}
+		const { report } = incrementalUpdate(path);
+		if (report.noop) {
+			console.log("nothing changed");
+			return;
+		}
+		console.log(
+			`+${report.added.length} ~${report.changed.length} -${report.removed.length} · ` +
+				`${report.nodeCount} nodes · ${report.edgeCount} edges · ${report.elapsedMs}ms`,
 		);
 	});
 

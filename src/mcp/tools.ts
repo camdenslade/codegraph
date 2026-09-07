@@ -1,4 +1,4 @@
-import { ingest } from "../ingest/index.js";
+import { incrementalUpdate } from "../ingest/incremental.js";
 import { findSymbol, type SymbolCandidate } from "../query/find-symbol.js";
 import { getNeighborhood, type Direction } from "../query/neighborhood.js";
 import { findPath, type FindPathResult } from "../query/path.js";
@@ -146,8 +146,8 @@ export function toolSkeleton(
 }
 
 export function toolRefresh(repoRoot: string): ToolResult {
-	const r = ingest(repoRoot, { fresh: true }); // TODO M5: real incremental update
-	return { text: JSON.stringify(r, null, 2), meta: EMPTY_META };
+	const { report } = incrementalUpdate(repoRoot);
+	return { text: JSON.stringify(report, null, 2), meta: EMPTY_META };
 }
 
 function countStepResolutions(res: FindPathResult): {

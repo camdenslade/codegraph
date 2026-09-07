@@ -20,6 +20,7 @@
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.4",
 		"better-sqlite3": "^11.7.0",
+		"chokidar": "^5.0.0",
 		"commander": "^12.1.0",
 		"ignore": "^7.0.8",
 		"tree-sitter": "^0.21.1",
