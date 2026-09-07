@@ -29,7 +29,8 @@ export interface EdgeRow {
 	line: number;
 }
 
-export type UnresolvedKind = "import" | "call" | "heritage" | "reference";
+export type UnresolvedKind =
+	"import" | "call" | "heritage" | "reference" | "route";
 
 export interface UnresolvedRow {
 	nodeId: string;
@@ -142,6 +143,39 @@ export function persistEdges(db: DB, rows: EdgeRow[]): void {
 	const insert = db.prepare(INSERT_EDGE_SQL);
 	const run = db.transaction((es: EdgeRow[]) => {
 		for (const e of es) insert.run(e);
+	});
+	run(rows);
+}
+
+export interface RouteNodeRow {
+	id: string;
+	name: string; // "GET /users/:id"
+	qualifiedName: string;
+	file: string;
+	spanStart: number;
+	spanEnd: number;
+	signature: string; // framework + method + path
+}
+
+/** Insert synthesized `route` nodes. Their file's DELETE (on reparse) clears them. */
+export function persistRouteNodes(db: DB, rows: RouteNodeRow[]): void {
+	const insert = db.prepare(
+		`INSERT OR REPLACE INTO nodes
+		   (id, kind, name, qualified_name, file, span_start, span_end, signature, doc, exported)
+		 VALUES (@id, 'route', @name, @qualified_name, @file, @span_start, @span_end, @signature, NULL, 0)`,
+	);
+	const run = db.transaction((rs: RouteNodeRow[]) => {
+		for (const r of rs) {
+			insert.run({
+				id: r.id,
+				name: r.name,
+				qualified_name: r.qualifiedName,
+				file: r.file,
+				span_start: r.spanStart,
+				span_end: r.spanEnd,
+				signature: r.signature,
+			});
+		}
 	});
 	run(rows);
 }

@@ -7,6 +7,7 @@ import {
 	type UnresolvedRow,
 } from "../store/persist.js";
 import type { ProgramBundle } from "./program.js";
+import { declFromSymbol } from "./resolve-decl.js";
 import type { SymbolIndex } from "./symbol-index.js";
 
 export interface SemanticResult {
@@ -41,19 +42,8 @@ export function semanticPass(
 		edges.push({ src, dst, kind, resolution, file, line });
 	}
 
-	/** Follow alias (import) symbols to the real declaration. */
-	function declFromSymbol(sym: ts.Symbol | undefined): ts.Declaration | null {
-		if (!sym) return null;
-		let s = sym;
-		if (s.flags & ts.SymbolFlags.Alias) {
-			try {
-				s = checker.getAliasedSymbol(s);
-			} catch {
-				/* not aliased after all */
-			}
-		}
-		return s.declarations?.[0] ?? null;
-	}
+	const resolveDecl = (sym: ts.Symbol | undefined) =>
+		declFromSymbol(checker, sym);
 
 	for (const sf of sourceFiles) {
 		const rel = toRelPath(repoRoot, sf.fileName);
@@ -64,7 +54,7 @@ export function semanticPass(
 			sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
 
 		const resolveExprToId = (expr: ts.Expression): string | null => {
-			const decl = declFromSymbol(checker.getSymbolAtLocation(expr));
+			const decl = resolveDecl(checker.getSymbolAtLocation(expr));
 			return decl ? idx.idForDeclaration(decl) : null;
 		};
 
@@ -89,7 +79,7 @@ export function semanticPass(
 				const nameNode = ts.isPropertyAccessExpression(callee)
 					? callee.name
 					: callee;
-				decl = declFromSymbol(checker.getSymbolAtLocation(nameNode));
+				decl = resolveDecl(checker.getSymbolAtLocation(nameNode));
 			}
 
 			if (decl) {
@@ -170,7 +160,7 @@ export function semanticPass(
 				return; // already captured as EXTENDS / IMPLEMENTS
 			}
 
-			const decl = declFromSymbol(checker.getSymbolAtLocation(id));
+			const decl = resolveDecl(checker.getSymbolAtLocation(id));
 			const targetId = decl ? idx.idForDeclaration(decl) : null;
 			if (targetId)
 				addEdge(

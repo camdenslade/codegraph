@@ -4,11 +4,17 @@ import {
 	hashText,
 	persistEdges,
 	persistFiles,
+	persistRouteNodes,
 	persistUnresolved,
 } from "../store/persist.js";
 import { discoverFiles } from "./discover.js";
 import { createProgram } from "./program.js";
-import { parseFiles, resolveImportEdges, runSemantic } from "./passes.js";
+import {
+	parseFiles,
+	resolveImportEdges,
+	routePass,
+	runSemantic,
+} from "./passes.js";
 
 export interface IngestOptions {
 	fresh?: boolean;
@@ -56,6 +62,12 @@ export function ingest(
 	const semantic = runSemantic(bundle, root, db);
 	persistEdges(db, semantic.edges);
 	persistUnresolved(db, semantic.unresolved);
+
+	// Pass 4: route nodes + HANDLES edges (needs handler function nodes to exist).
+	const routes = routePass(bundle, root, db);
+	persistRouteNodes(db, routes.routeNodes);
+	persistEdges(db, routes.edges);
+	persistUnresolved(db, routes.unresolved);
 
 	// Parse errors.
 	const recordErrors = db.transaction(() => {

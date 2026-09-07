@@ -6,12 +6,18 @@ import {
 	hashText,
 	persistEdges,
 	persistFiles,
+	persistRouteNodes,
 	persistUnresolved,
 	toRelPath,
 	type EdgeRow,
 } from "../store/persist.js";
 import { discoverFiles } from "./discover.js";
-import { parseFiles, resolveImportEdges, runSemantic } from "./passes.js";
+import {
+	parseFiles,
+	resolveImportEdges,
+	routePass,
+	runSemantic,
+} from "./passes.js";
 import { createProgram, type ProgramBundle } from "./program.js";
 
 export interface RefreshReport {
@@ -156,6 +162,11 @@ export function incrementalUpdate(
 		const semantic = runSemantic(scoped, root, db);
 		persistEdges(db, semantic.edges);
 		persistUnresolved(db, semantic.unresolved);
+
+		const routes = routePass(scoped, root, db);
+		persistRouteNodes(db, routes.routeNodes);
+		persistEdges(db, routes.edges);
+		persistUnresolved(db, routes.unresolved);
 
 		// 7. Restore inbound edges whose endpoints both still exist.
 		restoreInbound(db, inbound);
