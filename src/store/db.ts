@@ -1,0 +1,79 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { basename, join, resolve } from "node:path";
+import Database from "better-sqlite3";
+import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
+
+export type DB = Database.Database;
+
+/** OS-appropriate cache root. */
+export function cacheRoot(): string {
+    const override = process.env.CODEGRAPH_CACHE_DIR;
+    if (override) return override;
+    const home = homedir();
+    switch (platform()) {
+        case "win32":
+            return join(
+                process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+                "codegraph",
+            );
+        case "darwin":
+            return join(home, "Library", "Caches", "codegraph");
+        default:
+            return join(process.env.XDG_CACHE_HOME ?? join(home, ".cache"), "codegraph");
+    }
+}
+
+/** Cache file for a repo, keyed by its absolute path. */
+export function dbPathForRepo(repoRoot: string): string {
+    const abs = resolve(repoRoot);
+    const hash = createHash("sha256").update(abs).digest("hex").slice(0, 12);
+    const dir = join(cacheRoot(), `${basename(abs)}-${hash}`);
+    mkdirSync(dir, { recursive: true });
+    return join(dir, "graph.sqlite");
+}
+
+export interface OpenOptions {
+    /** Delete any existing db and start fresh */
+    fresh?: boolean;
+}
+
+export function openDB(repoRoot: string, opts: OpenOptions = {}): DB {
+    const path = dbPathForRepo(repoRoot);
+    if (opts.fresh && existsSync(path)) rmSync(path, { force: true });
+
+    let db = init(path);
+    const version = readSchemaVersion(db);
+    if (version !== null && version !== SCHEMA_VERSION) {
+        // Built by an incomplete schema migration? Delete and start fresh.
+        db.close();
+        rmSync(path, { force: true });
+        db = init(path);
+    }
+    writeSchemaVersion(db);
+    return db;
+}
+
+function init(path: string): DB {
+    const db = new Database(path);
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma("foreign_keys = ON");
+    db.exec(SCHEMA_SQL);
+    return db;
+}
+
+function readSchemaVersion(db: DB): number | null {
+    const row = db
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined;
+    return row ? Number(row.value) : null;
+}
+
+function writeSchemaVersion(db: DB): void {
+    db.prepare(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?) " + 
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(SCHEMA_VERSION.toString());
+}
