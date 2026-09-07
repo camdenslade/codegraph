@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { ingest } from "./ingest/index.js";
+import { findPath, type FindPathResult } from "./query/path.js";
+import { findSymbol } from "./query/find-symbol.js";
+import { getNeighborhood, type Direction } from "./query/neighborhood.js";
+import { serializeNeighborhood } from "./query/serialize.js";
 import { getStats, type Stats } from "./query/stats.js";
 import { getSkeleton } from "./query/skeleton.js";
 
@@ -9,6 +13,29 @@ program
     .name("codegraph")
     .description("Semantic code graph, served over MCP")
     .version("0.0.1")
+    .option("-C, --repo <path>", "repo root for query commands", ".");
+
+const repoRoot = (): string => program.opts().repo as string;
+
+function resolveSymbolOrExit(query: string): string {
+    const cands = findSymbol(repoRoot(), query);
+    if (cands.length === 0) {
+        console.error(`no symbol matching "${query}"`);
+        process.exit(1);
+    }
+    const top = cands[0]!;
+    const tied = cands.filter((c) => c.score === top.score);
+    if (tied.length > 1) {
+        console.error(
+            `"${query}" is ambiguous — disambiguate with file.ts:name or the qualified name:`,
+        );
+        for (const c of tied.slice(0, 10)) {
+            console.error(`  ${c.qualifiedName}  (${c.kind})  ${c.file}:${c.line}`);
+        }
+        process.exit(1);
+    }
+    return top.id;
+}
 
 program
     .command("ingest")
@@ -49,7 +76,76 @@ program
         for (const e of sk.imports) console.log(`  ${e.fromPath} -> ${e.toPath}`);
     })
 
+program
+    .command("find <query>")
+    .description("fuzzy symbol lookup (FR-CLI / FR-MCP-2)")
+    .action((q: string) => {
+        const cands = findSymbol(repoRoot(), q);
+        if (cands.length === 0) {
+            console.log("no matches");
+            return;
+        }
+        for (const c of cands) {
+            console.log(
+                `${String(c.score).padStart(3)}  ${c.kind.padEnd(10)} ${c.qualifiedName}  ${c.file}:${c.line}`,
+            );
+        }
+    });
+
+const query = program.command("query").description("read the graph");
+
+query
+    .command("neighborhood <symbol>")
+    .description("egocentric subgraph (FR-CLI-2)")
+    .option("--depth <n>", "hops, max 3", "2")
+    .option("--dir <direction>", "upstream | downstream | both", "both")
+    .option("--format <fmt>", "text | json", "text")
+    .action(
+        (
+            symbol: string,
+            opts: { depth: string; dir: Direction; format: "text" | "json" },
+        ) => {
+            const id = resolveSymbolOrExit(symbol);
+            const nh = getNeighborhood(repoRoot(), id, Number(opts.depth), opts.dir);
+            console.log(serializeNeighborhood(nh, { format: opts.format }).content);
+        },
+    );
+
+query
+    .command("path <from> <to>")
+    .description("shortest directed path along CALLS/HANDLES/IMPORTS (FR-CLI-3)")
+    .option("--max <n>", "max hops", "8")
+    .option("--format <fmt>", "text | json", "text")
+    .action(
+        (from: string, to: string, opts: { max: string; format: "text" | "json" }) => {
+            const r = findPath(
+                repoRoot(),
+                resolveSymbolOrExit(from),
+                resolveSymbolOrExit(to),
+                Number(opts.max),
+            );
+            if (opts.format === "json") {
+                console.log(JSON.stringify(r, null, 2));
+                return;
+            }
+            printPath(r);
+        },
+    );
+
 program.parse();
+
+function printPath(r: FindPathResult): void {
+    if (!r.found) {
+        console.log(r.message ?? "no path found");
+        return;
+    }
+    console.log(`path (${r.length} hop${r.length === 1 ? "" : "s"})`);
+    r.nodes.forEach((n, i) => {
+        console.log(`  ${n.kind} ${n.name}  ${n.location}`);
+        const step = r.steps[i];
+        if (step) console.log(`    | ${step.kind}  ${step.at}`);
+    });
+}
 
 function printStats(s: Stats): void {
     const line = (label: string, value: unknown) =>
