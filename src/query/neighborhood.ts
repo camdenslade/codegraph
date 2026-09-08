@@ -14,6 +14,7 @@ export interface NeighborhoodNode {
 	depth: number; // hops from seed; 0 = seed
 	spanStart: number;
 	line: number;
+	churn: number; // commits touching this node's file (0 if no git data)
 }
 
 export interface NeighborhoodEdge {
@@ -116,6 +117,15 @@ export function getNeighborhood(
 			)
 			.all(idJson) as UnresolvedInScope[];
 
+		const churnByFile = new Map(
+			(
+				db.prepare(`SELECT path, commits FROM file_churn`).all() as {
+					path: string;
+					commits: number;
+				}[]
+			).map((r) => [r.path, r.commits]),
+		);
+
 		const nodes: NeighborhoodNode[] = nodeRows
 			.map((n) => ({
 				id: n.id,
@@ -128,6 +138,7 @@ export function getNeighborhood(
 				depth: depthById.get(n.id) ?? 0,
 				spanStart: n.span_start,
 				line: lines.lineAt(n.file, n.span_start),
+				churn: churnByFile.get(n.file) ?? 0,
 			}))
 			.sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id));
 

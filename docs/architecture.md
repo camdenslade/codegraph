@@ -32,7 +32,9 @@ persist edges + routes + unresolved
 Ingestion runs in three phases across all registered analyzers:
 
 1. **Phase 1** discovers, parses, and persists nodes for every language. Nothing
-   resolves yet.
+   resolves yet. A **Phase 1.5** then records per-file git activity
+   (`git log --name-only`) into `file_churn`, used later to decide which nodes
+   to keep when a result has to be trimmed to a token budget.
 2. **Phase 2** builds one `NodeIndex` over the whole graph (so a TS file and a
    Java file can both see every node), then each analyzer resolves its edges and
    returns route nodes plus any client HTTP calls it saw.
@@ -105,16 +107,21 @@ absolute path (`dbPathForRepo` in `src/store/db.ts`). Never inside the repo.
 The Windows drive-letter case is normalized so `ingest c:/x` and a query run
 from `C:\x` hit the same cache.
 
-Schema (`src/store/schema.ts`, `SCHEMA_VERSION` currently 3):
+Schema (`src/store/schema.ts`, `SCHEMA_VERSION` currently 4):
 
 ```sql
 meta(key, value)
 files(path, hash, mtime, parsed_at)
+file_churn(path, commits, last_commit)                 -- git activity, not in the graph dump
 nodes(id, kind, name, qualified_name, file, span_start, span_end, signature, doc, exported)
 edges(src, dst, kind, resolution, file, line)          PRIMARY KEY (src, dst, kind)
 unresolved(id, node_id, kind, text, file, line)
 parse_errors(file, message, at)
 ```
+
+`file_churn` is deliberately outside the deterministic graph dump: it depends on
+commit history, so the golden tests do not read it. It is refreshed only on a
+full `ingest`, not on `refresh` (stale churn is fine for a pruning tie-break).
 
 - Node `id` is deterministic: `kind:qualified_name`, where `qualified_name` is
   `relPath:name` (or `relPath:Container.name` for members). Re-ingesting

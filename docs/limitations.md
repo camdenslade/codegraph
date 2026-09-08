@@ -48,6 +48,16 @@ Both are corrected by a full `codegraph ingest`. This is the deliberate
 FR-INC-2 trade: a single-file refresh stays well under a second by not
 reprocessing importers.
 
+## Churn-weighted pruning
+
+- Git churn (`file_churn`) is recorded only on a full `ingest`, never on
+  `refresh`, so after many refreshes the pruning tie-break uses stale counts.
+- It is file-level, not symbol-level: every symbol in a hot file is treated as
+  hot. It only breaks ties between equally-distant nodes during truncation; it
+  never hides a closer node.
+- No git, or a repo root that is not the git root: no churn data, pruning falls
+  back to distance only.
+
 ## Serving
 
 - **`serve` only detects a cold cache, not a stale one.** A warm-but-outdated

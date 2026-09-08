@@ -5,8 +5,10 @@ import { ANALYZERS } from "../lang/registry.js";
 import type { EndpointCall, ParsedUnit } from "../lang/types.js";
 import { openDB } from "../store/db.js";
 import { crossLink } from "./crosslink.js";
+import { collectChurn } from "./churn.js";
 import {
 	hashText,
+	persistChurn,
 	persistEdges,
 	persistRouteNodes,
 	persistUnits,
@@ -74,6 +76,9 @@ export function ingest(
 		persistUnits(db, inputs);
 		runs.push({ analyzer, discovered, units, errors });
 	}
+
+	// Phase 1.5: git churn per file, for heat-weighted context pruning.
+	persistChurn(db, collectChurn(root));
 
 	// Phase 2: resolve edges, with every node from every language visible.
 	const index = buildNodeIndex(db);

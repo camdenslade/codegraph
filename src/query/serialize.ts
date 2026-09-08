@@ -159,9 +159,11 @@ function truncateSiblings(
 	max: number,
 	totalNeighbors: number,
 ): { level: Level; content: string } {
+	// Keep the closest first, and among equal-distance nodes keep the actively
+	// edited ones - drop cold / legacy code before hot paths.
 	const neighbors = level.nodes
 		.filter((n) => n.id !== seed.id)
-		.sort((a, b) => a.depth - b.depth);
+		.sort((a, b) => a.depth - b.depth || b.churn - a.churn);
 
 	let keep = neighbors.length;
 	let result: Level = level;

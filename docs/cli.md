@@ -137,7 +137,8 @@ codegraph -C /repo query neighborhood handleSubmit --depth 2 --format json
 
 By default the result is fit to a token budget: it drops `REFERENCES` edges,
 then reduces depth, then compacts detail (signatures dropped), and only as a
-last resort omits the most distant neighbors. The output always reports
+last resort omits neighbors - closest first, and among equally-distant nodes the
+least-recently-touched (by git commit count) go first. The output always reports
 `neighbors: <shown> of <total>` and whether it was `truncated`. Pass `--full`
 when you need the complete list regardless of size.
 

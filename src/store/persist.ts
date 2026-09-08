@@ -185,6 +185,34 @@ export function persistRouteNodes(db: DB, rows: RouteNodeRow[]): void {
 	run(rows);
 }
 
+export interface ChurnRow {
+	path: string;
+	commits: number;
+	lastCommit: number | null;
+}
+
+/** Replace all file_churn rows. Only keeps entries for files still in `files`. */
+export function persistChurn(db: DB, rows: ChurnRow[]): void {
+	const insert = db.prepare(
+		`INSERT INTO file_churn (path, commits, last_commit)
+		 SELECT @path, @commits, @last_commit
+		 WHERE EXISTS (SELECT 1 FROM files WHERE path = @path)
+		 ON CONFLICT(path) DO UPDATE SET
+		   commits = excluded.commits, last_commit = excluded.last_commit`,
+	);
+	const run = db.transaction((rs: ChurnRow[]) => {
+		db.exec(`DELETE FROM file_churn`);
+		for (const r of rs) {
+			insert.run({
+				path: r.path,
+				commits: r.commits,
+				last_commit: r.lastCommit,
+			});
+		}
+	});
+	run(rows);
+}
+
 export function persistUnresolved(db: DB, rows: UnresolvedRow[]): void {
 	const insert = db.prepare(
 		`INSERT INTO unresolved (node_id, kind, text, file, line)

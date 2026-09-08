@@ -3,7 +3,7 @@
  *  This is used to create the database and to validate the data in the database.
  *  Bump SCHEMA_VERSION on any change; a mismatch triggers a full rebuild.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = /* sql */ `
 CREATE TABLE IF NOT EXISTS meta (
@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS files (
     hash TEXT NOT NULL,
     mtime INTEGER NOT NULL,
     parsed_at INTEGER NOT NULL
+);
+
+-- Git activity per file, for heat-weighted context pruning. Not part of the
+-- deterministic graph dump - it depends on history and is refreshed only on a
+-- full ingest.
+CREATE TABLE IF NOT EXISTS file_churn (
+    path        TEXT PRIMARY KEY REFERENCES files(path) ON DELETE CASCADE,
+    commits     INTEGER NOT NULL,
+    last_commit INTEGER
 );
 
 -- Nodes are unique by their name and the file they are defined in.
