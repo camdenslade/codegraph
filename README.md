@@ -16,8 +16,10 @@ codegraph query path routeHandler saveUser
 codegraph serve            # MCP stdio server
 ```
 
-Status: pre-1.0. TypeScript is fully supported; Java is at import-graph +
-syntactic call-graph level. See [Limitations](docs/limitations.md).
+Status: pre-1.0. TypeScript is fully supported; Java has an import graph, a
+syntactic call graph, and Spring MVC routes; frontend HTTP calls are linked to
+backend routes so `query path` crosses the language boundary. See
+[Limitations](docs/limitations.md).
 
 ---
 
@@ -138,14 +140,19 @@ scope, whether the result was truncated, and `total_neighbors` vs
 
 **Edges** (`edges` table), each labelled `resolved` or `heuristic`:
 
-| Edge                     | Meaning                                           |
-| ------------------------ | ------------------------------------------------- |
-| `IMPORTS`                | module to module                                  |
-| `DECLARES`               | module to the symbols it declares                 |
-| `CALLS`                  | function/method to the function/method it invokes |
-| `REFERENCES`             | non-call use of a symbol (value position)         |
-| `EXTENDS` / `IMPLEMENTS` | class/interface to its supertype                  |
-| `HANDLES`                | route to its handler function/component           |
+| Edge                     | Meaning                                                            |
+| ------------------------ | ------------------------------------------------------------------ |
+| `IMPORTS`                | module to module                                                   |
+| `DECLARES`               | module to the symbols it declares                                  |
+| `CALLS`                  | function/method to the function/method it invokes                  |
+| `CALLS` (heuristic)      | client HTTP call to the `route` node it hits (frontend to backend) |
+| `REFERENCES`             | non-call use of a symbol (value position)                          |
+| `EXTENDS` / `IMPLEMENTS` | class/interface to its supertype                                   |
+| `HANDLES`                | route to its handler function/component                            |
+
+So a single `query path` from a React component to a Spring repository method
+traverses `clientFn -> route -> HANDLES -> controller -> service -> repo` across
+the language boundary.
 
 Anything the analyzer could not bind is recorded in the `unresolved` table with
 its kind (`import`, `call`, `heritage`, `reference`, `route`) and source
@@ -162,7 +169,7 @@ location, so a query can tell you exactly what it does not know.
 | `IMPORTS`                | tsconfig paths, re-export barrels           | FQN to file (Maven/Gradle layout)                                 |
 | `CALLS`                  | TypeScript compiler API (accurate)          | syntactic: fields, locals, params, `this`, `super`, `new`, static |
 | `EXTENDS` / `IMPLEMENTS` | compiler API                                | name resolution (import / same-package / unique)                  |
-| Routes                   | Express/Fastify, React Router               | not yet                                                           |
+| Routes                   | Express/Fastify, React Router               | Spring MVC (`@GetMapping` etc., class-prefix composed)            |
 
 Java `CALLS` does not do return-type inference, so chained calls (`a.b().c()`)
 and stream/lambda pipelines are left `unresolved` and reported. See

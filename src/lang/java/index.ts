@@ -15,6 +15,7 @@ import type {
 	SymbolKind,
 } from "../types.js";
 import { extractCalls, type TypeRef } from "./calls.js";
+import { extractSpringRoutes } from "./routes.js";
 
 type SyntaxNode = Parser.SyntaxNode;
 
@@ -129,6 +130,7 @@ export const javaAnalyzer: LanguageAnalyzer = {
 		const { units, allRelPaths, index } = input;
 		const edges: EdgeRow[] = [];
 		const unresolved: ResolveOutput["unresolved"] = [];
+		const routeNodes: ResolveOutput["routeNodes"] = [];
 
 		const resolveFqnToRel = (fqn: string): string | null => {
 			const suffix = `${fqn.replace(/\./g, "/")}.java`;
@@ -276,9 +278,18 @@ export const javaAnalyzer: LanguageAnalyzer = {
 			});
 			edges.push(...calls.edges);
 			unresolved.push(...calls.unresolved);
+
+			// Spring MVC routes.
+			const routes = extractSpringRoutes(
+				root,
+				unit.relPath,
+				(id: string) => index.has(id),
+			);
+			routeNodes.push(...routes.routeNodes);
+			edges.push(...routes.edges);
 		}
 
-		return { edges, unresolved, routeNodes: [] };
+		return { edges, unresolved, routeNodes };
 	},
 };
 

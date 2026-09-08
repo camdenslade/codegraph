@@ -19,7 +19,7 @@
 | `CALLS`                              | TypeScript compiler API: overloads, aliases, re-exports; `any`-typed and dynamic calls fall back to a name heuristic or unresolved | syntactic (see below)                                                                                          |
 | `REFERENCES`                         | value-position uses of a tracked symbol                                                                                            | not extracted                                                                                                  |
 | `EXTENDS` / `IMPLEMENTS`             | compiler API                                                                                                                       | simple-name resolution: explicit import, then same package, then unique type name; generic args ignored        |
-| Routes (`route` nodes, `HANDLES`)    | Express / Fastify (`x.get("/p", h)`, `x.route({...})`), React Router (`<Route path element/component>`)                            | not yet (Spring `@GetMapping` is planned)                                                                      |
+| Routes (`route` nodes, `HANDLES`)    | Express / Fastify (`x.get("/p", h)`, `x.route({...})`), React Router (`<Route path element/component>`)                            | Spring MVC (`@GetMapping`/`@PostMapping`/`@RequestMapping`, class-level prefix composed)                       |
 | Warm-rebuild state for `--watch`     | reuses the `ts.Program`                                                                                                            | none needed                                                                                                    |
 
 ## TypeScript call resolution

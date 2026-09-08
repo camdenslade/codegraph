@@ -73,10 +73,21 @@ export interface ResolveInput {
 	carry?: unknown;
 }
 
+/** A client-side call to an HTTP endpoint, to be matched against route nodes. */
+export interface EndpointCall {
+	ownerId: string; // node id of the enclosing function/method/module
+	method: string; // GET/POST/... or "ANY"
+	path: string; // "/api/users/*" (path params normalized to *)
+	file: string;
+	line: number;
+}
+
 export interface ResolveOutput {
 	edges: EdgeRow[];
 	unresolved: UnresolvedRow[];
 	routeNodes: RouteNodeRow[];
+	/** Cross-language: client HTTP calls, linked to routes after all nodes exist. */
+	endpointCalls?: EndpointCall[];
 	/** Analyzer-private state to reuse next run. */
 	carry?: unknown;
 }

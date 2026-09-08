@@ -12,6 +12,7 @@ import { semanticPass } from "../../ingest/semantic.js";
 import { structuralParse } from "../../ingest/structural.js";
 import { createSymbolIndex } from "../../ingest/symbol-index.js";
 import { toRelPath } from "../../store/persist.js";
+import { extractEndpointCalls } from "./endpoint-calls.js";
 import type {
 	Discovered,
 	LanguageAnalyzer,
@@ -47,7 +48,13 @@ export const typeScriptAnalyzer: LanguageAnalyzer = {
 		const { repoRoot, discovered, units, allRelPaths, index, carry } =
 			input;
 		if (units.length === 0) {
-			return { edges: [], unresolved: [], routeNodes: [], carry };
+			return {
+				edges: [],
+				unresolved: [],
+				routeNodes: [],
+				endpointCalls: [],
+				carry,
+			};
 		}
 		const options = discovered.options as ts.CompilerOptions;
 
@@ -87,6 +94,11 @@ export const typeScriptAnalyzer: LanguageAnalyzer = {
 			index.idsByName,
 		);
 		const routes = routePass(scoped, repoRoot, symbolIndex);
+		const endpointCalls = extractEndpointCalls(
+			scoped,
+			repoRoot,
+			symbolIndex,
+		);
 
 		return {
 			edges: [...imports.edges, ...semantic.edges, ...routes.edges],
@@ -96,6 +108,7 @@ export const typeScriptAnalyzer: LanguageAnalyzer = {
 				...routes.unresolved,
 			],
 			routeNodes: routes.routeNodes,
+			endpointCalls,
 			carry: built.program,
 		};
 	},

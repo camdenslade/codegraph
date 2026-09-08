@@ -10,9 +10,13 @@ does not do yet, so you know when to still open the file.
   edges. A Java `get_symbol_neighborhood` with few or no `CALLS` does not mean
   the method is unused - `meta.notes` says so on every Java result. See
   [languages.md](languages.md#java-call-resolution).
-- **No cross-language edges.** A frontend `apiRequest("/api/users")` string is
-  not linked to the backend `@GetMapping("/api/users")` handler. Change-impact
-  questions that cross the HTTP boundary cannot be answered from the graph.
+- **Cross-language edges are heuristic and literal-only.** A frontend
+  `fetch` / `axios.*` / `apiRequest` call with a **string or template-literal**
+  `/api/...` URL is matched to the Spring route with the same normalized
+  method + path, and gets a `heuristic` `CALLS` edge to the route node. URLs
+  built from variables or concatenation, a base-URL constant, or a non-`/api`
+  prefix are missed. The match is method + path only, so two routes that differ
+  only by content-type or headers are indistinguishable.
 - **No type-reference edges.** `get_symbol_neighborhood` on an `interface` or
   `type-alias` returns no edges for the places that use it as a type. "What
   uses this type" degrades to the module-import list, which is broader than the
@@ -26,8 +30,7 @@ does not do yet, so you know when to still open the file.
 
 ## Routes
 
-- **Spring routes are not extracted.** `@GetMapping` / `@RequestMapping` methods
-  are plain `method` nodes with no route semantics and are not findable by path.
+- **`@RequestMapping(method = {GET, POST})` arrays** take the first verb only.
 - **Wrapped React routes collapse to the wrapper.** `<ProtectedRoute><Dues/>
 </ProtectedRoute>` links the route to `ProtectedRoute`, not `Dues`, so two
   routes wrapping different pages can look identical from the route graph.

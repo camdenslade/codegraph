@@ -29,15 +29,21 @@ persist edges + routes + unresolved
    +--> MCP stdio server -> Claude Code / Claude Desktop
 ```
 
-Ingestion runs in two phases across all registered analyzers:
+Ingestion runs in three phases across all registered analyzers:
 
 1. **Phase 1** discovers, parses, and persists nodes for every language. Nothing
    resolves yet.
 2. **Phase 2** builds one `NodeIndex` over the whole graph (so a TS file and a
-   Java file can both see every node), then each analyzer resolves its edges.
+   Java file can both see every node), then each analyzer resolves its edges and
+   returns route nodes plus any client HTTP calls it saw.
+3. **Phase 3** (`crossLink`) matches those client HTTP calls against the now
+   persisted route nodes by normalized method + path, emitting `heuristic`
+   `CALLS` edges from the calling symbol to the route node. This is the
+   TypeScript-frontend to Spring-backend bridge; `query path` then traverses
+   `clientFn -> route -> HANDLES -> controller -> service -> repo`.
 
-This ordering means cross-file and (in principle) cross-language resolution can
-see the complete node set before any edge is drawn.
+This ordering means cross-file and cross-language resolution can see the
+complete node set before any edge is drawn.
 
 ## `LanguageAnalyzer`
 

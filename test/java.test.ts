@@ -29,6 +29,7 @@ describe("java analyzer (M1 level)", () => {
 				.sort();
 		expect(byKind("class")).toEqual([
 			"src/main/java/com/x/model/User.java:User",
+			"src/main/java/com/x/repo/UserController.java:UserController",
 			"src/main/java/com/x/repo/UserRepo.java:UserRepo",
 		]);
 		expect(byKind("interface")).toEqual([
@@ -74,6 +75,56 @@ describe("java analyzer (M1 level)", () => {
 		// UserRepo.all() does `new User().name()`
 		expect(calls).toContain(
 			"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all -> method:src/main/java/com/x/model/User.java:User.name",
+		);
+	});
+
+	it("extracts Spring routes with class-level prefix and links the handler", () => {
+		const routes = dump.nodes
+			.filter((n) => n.kind === "route")
+			.map((n) => n.name)
+			.sort();
+		expect(routes).toEqual([
+			"GET /api/users",
+			"POST /api/users/{id}/promote",
+		]);
+
+		const handles = dump.edges
+			.filter((e) => e.kind === "HANDLES")
+			.map((e) => `${e.src} -> ${e.dst}`);
+		expect(handles).toContain(
+			"route:src/main/java/com/x/repo/UserController.java:GET /api/users -> " +
+				"method:src/main/java/com/x/repo/UserController.java:UserController.list",
+		);
+	});
+
+	it("resolves an injected-field call: UserController.list -> UserRepo.all", () => {
+		const calls = dump.edges
+			.filter((e) => e.kind === "CALLS")
+			.map((e) => `${e.src} -> ${e.dst}`);
+		expect(calls).toContain(
+			"method:src/main/java/com/x/repo/UserController.java:UserController.list -> " +
+				"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all",
+		);
+	});
+
+	it("links a frontend apiRequest call to its Spring route (cross-language)", () => {
+		const xlang = dump.edges
+			.filter(
+				(e) =>
+					e.kind === "CALLS" &&
+					typeof e.src === "string" &&
+					e.src.startsWith("function:frontend/api.ts") &&
+					typeof e.dst === "string" &&
+					e.dst.startsWith("route:"),
+			)
+			.map((e) => `${e.src} -> ${e.dst}`);
+		expect(xlang).toContain(
+			"function:frontend/api.ts:loadUsers -> " +
+				"route:src/main/java/com/x/repo/UserController.java:GET /api/users",
+		);
+		expect(xlang).toContain(
+			"function:frontend/api.ts:promoteUser -> " +
+				"route:src/main/java/com/x/repo/UserController.java:POST /api/users/{id}/promote",
 		);
 	});
 });

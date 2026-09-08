@@ -2,7 +2,12 @@ import { readFileSync, statSync } from "node:fs";
 import { canonicalRoot } from "../store/db.js";
 import { performance } from "node:perf_hooks";
 import { ANALYZERS } from "../lang/registry.js";
-import type { LanguageAnalyzer, ParsedUnit } from "../lang/types.js";
+import type {
+	EndpointCall,
+	LanguageAnalyzer,
+	ParsedUnit,
+} from "../lang/types.js";
+import { crossLink } from "./crosslink.js";
 import { openDB, type DB } from "../store/db.js";
 import {
 	hashText,
@@ -169,6 +174,7 @@ export function incrementalUpdate(
 
 		// 5. Resolve edges for the reparsed units of each affected analyzer.
 		const index = buildNodeIndex(db);
+		const endpointCalls: EndpointCall[] = [];
 		for (const { analyzer, repoRoot: aRoot } of discovered) {
 			const units = unitsByAnalyzer.get(analyzer);
 			if (!units || units.length === 0) continue;
@@ -188,8 +194,10 @@ export function incrementalUpdate(
 			persistRouteNodes(db, out.routeNodes);
 			persistEdges(db, out.edges);
 			persistUnresolved(db, out.unresolved);
+			if (out.endpointCalls) endpointCalls.push(...out.endpointCalls);
 			carryOut.set(analyzer.id, out.carry);
 		}
+		persistEdges(db, crossLink(db, endpointCalls));
 
 		// 6. Restore inbound edges whose endpoints both still exist.
 		restoreInbound(db, inbound);

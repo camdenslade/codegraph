@@ -2,8 +2,9 @@ import { readFileSync, statSync } from "node:fs";
 import { canonicalRoot } from "../store/db.js";
 import { performance } from "node:perf_hooks";
 import { ANALYZERS } from "../lang/registry.js";
-import type { ParsedUnit } from "../lang/types.js";
+import type { EndpointCall, ParsedUnit } from "../lang/types.js";
 import { openDB } from "../store/db.js";
+import { crossLink } from "./crosslink.js";
 import {
 	hashText,
 	persistEdges,
@@ -76,6 +77,7 @@ export function ingest(
 
 	// Phase 2: resolve edges, with every node from every language visible.
 	const index = buildNodeIndex(db);
+	const endpointCalls: EndpointCall[] = [];
 	for (const { analyzer, discovered, units } of runs) {
 		const out = analyzer.resolveEdges({
 			repoRoot: discovered.repoRoot,
@@ -87,7 +89,12 @@ export function ingest(
 		persistRouteNodes(db, out.routeNodes);
 		persistEdges(db, out.edges);
 		persistUnresolved(db, out.unresolved);
+		if (out.endpointCalls) endpointCalls.push(...out.endpointCalls);
 	}
+
+	// Phase 3: cross-language - link client HTTP calls to route nodes (needs
+	// every route persisted first).
+	persistEdges(db, crossLink(db, endpointCalls));
 
 	// Parse errors.
 	const errors = runs.flatMap((r) => r.errors);
