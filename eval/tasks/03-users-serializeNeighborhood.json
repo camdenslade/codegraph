@@ -1,0 +1,11 @@
+{
+	"id": "users-serializeNeighborhood",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Where is `serializeNeighborhood` called from? List every call site (function + file).",
+	"rubric": {
+		"expectSymbols": ["toolNeighborhood"],
+		"expectFiles": ["src/cli.ts", "src/mcp/tools.ts"],
+		"forbid": ["src/query/neighborhood.ts"]
+	}
+}

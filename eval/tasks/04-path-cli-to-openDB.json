@@ -1,0 +1,10 @@
+{
+	"id": "path-cli-to-openDB",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Trace the shortest call path from the CLI `ingest` command's action handler to `openDB`. Show each hop.",
+	"rubric": {
+		"expectSymbols": ["ingest", "openDB"],
+		"expectFiles": ["src/ingest/index.ts", "src/store/db.ts"]
+	}
+}

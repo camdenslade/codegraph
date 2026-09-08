@@ -29,7 +29,8 @@
 		"test:watch": "vitest",
 		"lint": "eslint src eval",
 		"format": "prettier --write .",
-		"check": "tsc --noEmit && eslint src && vitest run"
+		"check": "tsc --noEmit && tsc --noEmit -p tsconfig.eval.json && eslint src eval && vitest run",
+		"eval": "tsx eval/run.ts"
 	},
 	"engines": {
 		"node": ">=20"

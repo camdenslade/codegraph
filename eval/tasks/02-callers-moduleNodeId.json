@@ -1,0 +1,10 @@
+{
+	"id": "callers-moduleNodeId",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Which functions call `moduleNodeId`? For each, give the function name and file.",
+	"rubric": {
+		"expectSymbols": ["resolveImportEdges", "semanticPass", "persistUnits"],
+		"expectFiles": ["src/ingest/passes.ts", "src/ingest/semantic.ts", "src/store/persist.ts"]
+	}
+}

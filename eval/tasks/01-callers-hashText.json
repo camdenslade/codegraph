@@ -1,0 +1,11 @@
+{
+	"id": "callers-hashText",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "In this repo, which functions call `hashText`? Name each calling function and the file it lives in. Do not list import lines, only real call sites.",
+	"rubric": {
+		"expectSymbols": ["ingest", "incrementalUpdate", "writeInputSetHash"],
+		"expectFiles": ["src/ingest/index.ts", "src/ingest/incremental.ts"],
+		"forbid": ["structuralParse", "discoverFiles"]
+	}
+}

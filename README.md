@@ -197,6 +197,21 @@ npm run build       # tsc -> dist/
 Tests use golden snapshots and full-vs-incremental equivalence checks on small
 fixture repos under `test/fixtures/`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Evaluation
+
+`eval/` is a harness that measures whether CodeGraph makes an agent faster and
+more correct than grep + read alone: each task runs twice (grep-only vs
++CodeGraph MCP), and the harness scores against a rubric and reports pass-rate
+delta, median token/file-read deltas, and how often a truncated or heuristic
+graph result preceded a wrong answer.
+
+```bash
+npm run eval                                   # self-test with the mock driver
+npm run eval -- --driver claude --model <id>   # real runs
+```
+
+Ships with 5 seed tasks; see [eval/README.md](eval/README.md).
+
 ---
 
 ## Documentation

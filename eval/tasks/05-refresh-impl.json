@@ -1,0 +1,11 @@
+{
+	"id": "refresh-impl",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "When a user runs `codegraph refresh`, does it do a full rebuild or an incremental update, and which function implements the behavior?",
+	"rubric": {
+		"expectSymbols": ["incrementalUpdate"],
+		"expectFiles": ["src/ingest/incremental.ts"],
+		"forbid": ["full rebuild", "fresh: true"]
+	}
+}

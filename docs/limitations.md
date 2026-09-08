@@ -67,4 +67,7 @@ reprocessing importers.
 - `RETURNS_TYPE` / `PARAM_TYPE` edges.
 - DOT output format.
 - LSP-grade Java resolution (Eclipse JDT).
-- The evaluation harness (task set + agent-vs-grep measurement).
+- The full evaluation task set. The harness itself is built (`eval/`, two
+  conditions, rubric scoring, aggregate report, EV-6 honesty check); it ships
+  with 5 seed tasks. The §9 corpus of 15 to 25 tasks on 2 to 3 open-source
+  repos still needs to be written.
