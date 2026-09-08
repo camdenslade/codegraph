@@ -40,12 +40,15 @@ export function findSymbol(
 				`SELECT id, kind, name, qualified_name, file, span_start, signature
          FROM nodes
          WHERE (id = @q OR qualified_name = @q OR name = @q
-                OR name LIKE @like COLLATE NOCASE)
+                OR name LIKE @like COLLATE NOCASE
+                OR qualified_name LIKE @qnSuffix COLLATE NOCASE)
            ${fileClause}`,
 			)
 			.all({
 				q: query,
 				like: `%${namePart}%`,
+				// "Class.method" -> match a qualified_name ending in ":Class.method"
+				qnSuffix: `%:${namePart}`,
 				fileLike: `%${filePart}%`,
 			}) as Row[];
 
@@ -97,8 +100,10 @@ function splitQuery(q: string): { filePart: string; namePart: string } {
 function scoreOf(rawQuery: string, namePart: string, r: Row): number {
 	if (r.id === rawQuery) return 100;
 	if (r.qualified_name === rawQuery) return 95;
-	const n = r.name.toLowerCase();
+	const qn = r.qualified_name.toLowerCase();
 	const q = namePart.toLowerCase();
+	if (qn.endsWith(`:${q}`)) return 92; // exact "Class.method"
+	const n = r.name.toLowerCase();
 	if (n === q) return 85;
 	if (n.startsWith(q)) return 70;
 	if (n.includes(q)) return 55;

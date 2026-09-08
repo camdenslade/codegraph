@@ -209,15 +209,9 @@ function buildMeta(
 		else if (e.resolution === "heuristic") heuristic++;
 	}
 	const notes: string[] = [];
-	const seedIsJava = nh.seed.file.endsWith(".java");
-	const seedHasCalls = level.edges.some(
-		(e) =>
-			e.kind === "CALLS" &&
-			(e.src === nh.seed.id || e.dst === nh.seed.id),
-	);
-	if (seedIsJava && !seedHasCalls) {
+	if (nh.seed.file.endsWith(".java")) {
 		notes.push(
-			"Java call edges are not modeled in v1: no CALLS here does NOT mean the method is unused or calls nothing - read the file to confirm.",
+			"Java call resolution is syntactic (no return-type inference): chained calls like `a.b().c()` and stream/lambda pipelines are left unresolved - see unresolved_in_scope and read the file before concluding a method is unused.",
 		);
 	}
 

@@ -14,6 +14,7 @@ import type {
 	ResolveOutput,
 	SymbolKind,
 } from "../types.js";
+import { extractCalls, type TypeRef } from "./calls.js";
 
 type SyntaxNode = Parser.SyntaxNode;
 
@@ -39,6 +40,7 @@ const TYPE_KINDS: Record<string, SymbolKind> = {
 
 interface JavaUnitMeta {
 	pkg: string;
+	tree: Parser.Tree;
 }
 
 const parser = new Parser();
@@ -80,9 +82,10 @@ export const javaAnalyzer: LanguageAnalyzer = {
 
 	parseFile(relPath, absPath, source): ParsedUnit {
 		parser.setLanguage(Java as never);
-		const root = parser.parse(source, undefined, {
+		const tree = parser.parse(source, undefined, {
 			bufferSize: Buffer.byteLength(source, "utf8") + 1024,
-		}).rootNode;
+		});
+		const root = tree.rootNode;
 
 		let pkg = "";
 		const symbols: LangSymbol[] = [];
@@ -118,7 +121,7 @@ export const javaAnalyzer: LanguageAnalyzer = {
 			absPath,
 			symbols,
 			imports,
-			meta: { pkg } satisfies JavaUnitMeta,
+			meta: { pkg, tree } satisfies JavaUnitMeta,
 		};
 	},
 
@@ -135,10 +138,47 @@ export const javaAnalyzer: LanguageAnalyzer = {
 				) ?? null
 			);
 		};
+		// id form is `kind:rel:name`, so rel is everything between the first
+		// and last colon.
+		const relOfId = (id: string) =>
+			id.slice(id.indexOf(":") + 1, id.lastIndexOf(":"));
 
 		for (const unit of units) {
-			const pkg = (unit.meta as JavaUnitMeta | undefined)?.pkg ?? "";
+			const meta = unit.meta as JavaUnitMeta | undefined;
+			if (!meta) continue;
+			const { pkg, tree } = meta;
+			const root = tree.rootNode;
 			const srcMod = moduleNodeId(unit.relPath);
+
+			/** Simple type name -> the in-repo type it refers to from this file. */
+			const resolveTypeRef = (
+				simple: string,
+			): (TypeRef & { resolution: "resolved" | "heuristic" }) | null => {
+				const imp = unit.imports.find(
+					(i) =>
+						!i.specifier.endsWith(".*") &&
+						i.specifier.endsWith(`.${simple}`),
+				);
+				if (imp) {
+					const rel = resolveFqnToRel(imp.specifier);
+					if (rel)
+						return { rel, name: simple, resolution: "resolved" };
+				}
+				if (pkg) {
+					const rel = resolveFqnToRel(`${pkg}.${simple}`);
+					if (rel)
+						return { rel, name: simple, resolution: "resolved" };
+				}
+				const byName = index.typeIdsByName.get(simple);
+				if (byName && byName.length === 1) {
+					return {
+						rel: relOfId(byName[0]!),
+						name: simple,
+						resolution: "heuristic",
+					};
+				}
+				return null;
+			};
 
 			// IMPORTS: FQN -> file (standard src/main/java layout).
 			for (const imp of unit.imports) {
@@ -174,29 +214,32 @@ export const javaAnalyzer: LanguageAnalyzer = {
 				}
 			}
 
-			// EXTENDS / IMPLEMENTS: re-parse this unit's tree for heritage.
-			const heritage = extractHeritage(unit.absPath);
-			for (const h of heritage) {
+			// EXTENDS / IMPLEMENTS, and record resolved superclasses for the call pass.
+			const parentByClass = new Map<string, TypeRef>();
+			for (const h of extractHeritage(root)) {
 				const selfId = index.idByQualifiedName.get(
 					`${unit.relPath}:${h.owner}`,
 				);
 				if (!selfId) continue;
-				const resolved = resolveTypeName(
-					h.target,
-					pkg,
-					unit.imports,
-					resolveFqnToRel,
-					index,
-				);
-				if (resolved) {
+				const ref = resolveTypeRef(h.target);
+				const dstId = ref
+					? index.idByQualifiedName.get(`${ref.rel}:${ref.name}`)
+					: undefined;
+				if (ref && dstId) {
 					edges.push({
 						src: selfId,
-						dst: resolved.id,
+						dst: dstId,
 						kind: h.kind,
-						resolution: resolved.resolution,
+						resolution: ref.resolution,
 						file: unit.relPath,
 						line: h.line,
 					});
+					if (h.kind === "EXTENDS") {
+						parentByClass.set(h.owner, {
+							rel: ref.rel,
+							name: ref.name,
+						});
+					}
 				} else {
 					unresolved.push({
 						nodeId: selfId,
@@ -207,9 +250,34 @@ export const javaAnalyzer: LanguageAnalyzer = {
 					});
 				}
 			}
+
+			// CALLS (syntactic resolution - see calls.ts).
+			const classMethods = new Map<string, Set<string>>();
+			for (const s of unit.symbols) {
+				if (s.kind === "method" && s.container) {
+					const set =
+						classMethods.get(s.container) ??
+						classMethods
+							.set(s.container, new Set())
+							.get(s.container)!;
+					set.add(s.name);
+				}
+			}
+			const calls = extractCalls(root, {
+				relPath: unit.relPath,
+				classMethods,
+				parentOf: (cn) => parentByClass.get(cn) ?? null,
+				resolveTypeRef: (s) => {
+					const r = resolveTypeRef(s);
+					return r ? { rel: r.rel, name: r.name } : null;
+				},
+				has: (id) => index.has(id),
+				methodIdsByName: index.idsByName,
+			});
+			edges.push(...calls.edges);
+			unresolved.push(...calls.unresolved);
 		}
 
-		// Java CALLS need type resolution (JDT) - deferred to v1.1.
 		return { edges, unresolved, routeNodes: [] };
 	},
 };
@@ -316,17 +384,7 @@ interface HeritageRef {
 	line: number;
 }
 
-function extractHeritage(absPath: string): HeritageRef[] {
-	let source: string;
-	try {
-		source = readFileSync(absPath, "utf8");
-	} catch {
-		return [];
-	}
-	parser.setLanguage(Java as never);
-	const root = parser.parse(source, undefined, {
-		bufferSize: Buffer.byteLength(source, "utf8") + 1024,
-	}).rootNode;
+function extractHeritage(root: SyntaxNode): HeritageRef[] {
 	const refs: HeritageRef[] = [];
 
 	const visit = (node: SyntaxNode): void => {
@@ -398,34 +456,4 @@ function typeNames(clause: SyntaxNode): string[] {
 		if (base) out.push(base.text.split(".").pop() ?? base.text);
 	}
 	return out;
-}
-
-function resolveTypeName(
-	simple: string,
-	pkg: string,
-	imports: LangImport[],
-	resolveFqnToRel: (fqn: string) => string | null,
-	index: ResolveInput["index"],
-): { id: string; resolution: "resolved" | "heuristic" } | null {
-	const idAt = (rel: string | null) =>
-		rel ? (index.idByQualifiedName.get(`${rel}:${simple}`) ?? null) : null;
-
-	// 1. explicit import ending in `.<simple>`
-	const imp = imports.find(
-		(i) =>
-			!i.specifier.endsWith(".*") && i.specifier.endsWith(`.${simple}`),
-	);
-	const viaImport = imp && idAt(resolveFqnToRel(imp.specifier));
-	if (viaImport) return { id: viaImport, resolution: "resolved" };
-
-	// 2. same package
-	const viaPkg = pkg && idAt(resolveFqnToRel(`${pkg}.${simple}`));
-	if (viaPkg) return { id: viaPkg, resolution: "resolved" };
-
-	// 3. unique name across the graph
-	const byName = index.typeIdsByName.get(simple);
-	if (byName && byName.length === 1) {
-		return { id: byName[0]!, resolution: "heuristic" };
-	}
-	return null;
 }

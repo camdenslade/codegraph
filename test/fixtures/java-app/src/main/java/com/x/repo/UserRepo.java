@@ -5,6 +5,7 @@ import java.util.List;
 
 public class UserRepo implements Repo {
 	public List<String> all() {
-		return new User().name() == null ? null : null;
+		User u = new User();
+		return u.name() == null ? null : null;
 	}
 }

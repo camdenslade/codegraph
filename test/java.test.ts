@@ -66,4 +66,14 @@ describe("java analyzer (M1 level)", () => {
 		);
 		expect(ext.length).toBeGreaterThan(0);
 	});
+
+	it("resolves cross-file method calls via declared types", () => {
+		const calls = dump.edges
+			.filter((e) => e.kind === "CALLS")
+			.map((e) => `${e.src} -> ${e.dst}`);
+		// UserRepo.all() does `new User().name()`
+		expect(calls).toContain(
+			"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all -> method:src/main/java/com/x/model/User.java:User.name",
+		);
+	});
 });
