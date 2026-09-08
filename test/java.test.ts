@@ -5,17 +5,19 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ingest } from "../src/ingest/index.js";
 import { dumpGraph } from "../src/query/dump.js";
+import { getEditImpact } from "../src/query/impact.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
 describe("java analyzer (M1 level)", () => {
 	let dump: ReturnType<typeof dumpGraph>;
+	let repo: string;
 
 	beforeAll(() => {
 		process.env.CODEGRAPH_CACHE_DIR = mkdtempSync(
 			join(tmpdir(), "cg-java-cache-"),
 		);
-		const repo = mkdtempSync(join(tmpdir(), "cg-java-repo-"));
+		repo = mkdtempSync(join(tmpdir(), "cg-java-repo-"));
 		cpSync(join(here, "fixtures", "java-app"), repo, { recursive: true });
 		ingest(repo, { fresh: true });
 		dump = dumpGraph(repo);
@@ -105,6 +107,18 @@ describe("java analyzer (M1 level)", () => {
 			"method:src/main/java/com/x/repo/UserController.java:UserController.list -> " +
 				"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all",
 		);
+	});
+
+	it("reports edit impact: callers + the routes that reach a symbol", () => {
+		const impact = getEditImpact(
+			repo,
+			"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all",
+			3,
+		);
+		expect(impact.direct.map((s) => s.name)).toContain("list"); // UserController.list
+		// GET /api/users -> list -> all, so the route is in the transitive reach
+		expect(impact.routes.map((s) => s.name)).toContain("GET /api/users");
+		expect(impact.meta.blastRadius).toBeGreaterThan(0);
 	});
 
 	it("links a frontend apiRequest call to its Spring route (cross-language)", () => {

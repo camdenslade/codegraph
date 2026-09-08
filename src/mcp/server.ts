@@ -6,6 +6,7 @@ import {
 	type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+	toolEditImpact,
 	toolFindPath,
 	toolFindSymbol,
 	toolNeighborhood,
@@ -74,6 +75,28 @@ const TOOLS = [
 				format: FORMAT_PROP,
 			},
 			required: ["from_symbol", "to_symbol"],
+		},
+	},
+	{
+		name: "get_edit_impact",
+		description:
+			"Blast radius of changing a symbol before you touch it: direct and " +
+			"transitive callers/references, methods that override it, and routes " +
+			"whose handler chain reaches it. Budgeted to a review payload with an " +
+			"estimated token cost. Check meta for heuristic edges and language caveats.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				symbol: { type: "string" },
+				max_hops: {
+					type: "integer",
+					minimum: 1,
+					maximum: 5,
+					default: 3,
+				},
+				format: FORMAT_PROP,
+			},
+			required: ["symbol"],
 		},
 	},
 	{
@@ -152,6 +175,8 @@ function dispatch(
 			return toolNeighborhood(repoRoot, args as never);
 		case "find_path":
 			return toolFindPath(repoRoot, args as never);
+		case "get_edit_impact":
+			return toolEditImpact(repoRoot, args as never);
 		case "get_architectural_skeleton":
 			return toolSkeleton(repoRoot, args as never);
 		case "find_symbol":

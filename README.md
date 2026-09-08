@@ -94,7 +94,7 @@ See [docs/cli.md](docs/cli.md) for the full command reference.
 
 ## Use with an MCP client (Claude Code, Claude Desktop)
 
-CodeGraph exposes five tools over an MCP stdio server. Register it with your
+CodeGraph exposes six tools over an MCP stdio server. Register it with your
 client, pointing `-C` at the repo you want indexed:
 
 `~/.claude.json` (user scope) or a project `.mcp.json`:
@@ -118,13 +118,14 @@ client, pointing `-C` at the repo you want indexed:
 On first launch with a cold cache the server ingests the repo (progress on
 stderr), then answers. Tools:
 
-| Tool                                                         | Purpose                                                                                 |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `find_symbol(query)`                                         | Fuzzy name lookup, returns candidates with kind + location. Call first to disambiguate. |
-| `get_symbol_neighborhood(symbol, depth?, direction?, full?)` | Callers, callees, imports, and type relations around a symbol.                          |
-| `find_path(from_symbol, to_symbol, max_len?)`                | Shortest directed path along `CALLS` / `HANDLES` / `IMPORTS`.                           |
-| `get_architectural_skeleton()`                               | Module graph plus per-module exported names.                                            |
-| `refresh()`                                                  | Incremental update of the graph.                                                        |
+| Tool                                                         | Purpose                                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `find_symbol(query)`                                         | Fuzzy name lookup, returns candidates with kind + location. Call first to disambiguate.  |
+| `get_symbol_neighborhood(symbol, depth?, direction?, full?)` | Callers, callees, imports, and type relations around a symbol.                           |
+| `find_path(from_symbol, to_symbol, max_len?)`                | Shortest directed path along `CALLS` / `HANDLES` / `IMPORTS`.                            |
+| `get_edit_impact(symbol, max_hops?)`                         | Blast radius before a change: callers, overrides, routes reaching it, review-token cost. |
+| `get_architectural_skeleton()`                               | Module graph plus per-module exported names.                                             |
+| `refresh()`                                                  | Incremental update of the graph.                                                         |
 
 Every result carries a `meta` block: resolution counts, unresolved symbols in
 scope, whether the result was truncated, and `total_neighbors` vs

@@ -67,6 +67,20 @@ Treat it as a lead, not ground truth. Before concluding, check:
 Shortest directed path from one symbol to another along `CALLS` / `HANDLES` /
 `IMPORTS`, or a report that none exists within `max_len` (default 8).
 
+### `get_edit_impact(symbol, max_hops?, format?)`
+
+The blast radius of changing `symbol`, to plan a refactor before touching code:
+
+- `direct` - 1-hop callers and references.
+- `transitive` - 2+ hop callers, up to `max_hops` (default 3, max 5).
+- `overrides` - methods in subtypes that override the seed (for a method).
+- `routes` - route nodes whose handler chain reaches the seed.
+- `moduleImporters` - count of modules importing the seed's module (broad
+  signal, not enumerated).
+- `meta.estReviewTokens` - rough cost of reading the direct sites.
+- `meta.resolved` / `meta.heuristic`, `meta.notes` - how much to trust it (Java
+  chained-call sites are missing; heuristic edges are flagged).
+
 ### `get_architectural_skeleton(format?)`
 
 The module graph (files + import edges) plus each module's exported symbol

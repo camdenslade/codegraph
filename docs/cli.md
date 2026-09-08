@@ -167,6 +167,27 @@ chain forward; the reverse is a separate query.
 
 ---
 
+## `query impact <symbol> [options]`
+
+The blast radius of changing a symbol, before you touch it: reverse call/
+reference slice, methods that override it, and the routes whose handler chain
+reaches it, plus an estimate of the tokens to review the direct call sites.
+
+```
+codegraph -C /repo query impact EmailService.sendEmail
+codegraph -C /repo query impact apiRequest --hops 2 --format json
+```
+
+| Option           | Default |                             |
+| ---------------- | ------- | --------------------------- |
+| `--hops <n>`     | `3`     | reverse-slice depth, 1 to 5 |
+| `--format <fmt>` | `text`  | `text` or `json`            |
+
+The `META` block reports how many sites came from `heuristic` edges and, for a
+Java seed, that chained-call sites are missing.
+
+---
+
 ## `serve`
 
 Start the MCP stdio server for the repo (`-C` or cwd). If the cache is cold it

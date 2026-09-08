@@ -1,5 +1,6 @@
 import { incrementalUpdate } from "../ingest/incremental.js";
 import { findSymbol, type SymbolCandidate } from "../query/find-symbol.js";
+import { getEditImpact, renderImpact } from "../query/impact.js";
 import { getNeighborhood, type Direction } from "../query/neighborhood.js";
 import { findPath, type FindPathResult } from "../query/path.js";
 import { serializeNeighborhood, type ResultMeta } from "../query/serialize.js";
@@ -150,6 +151,35 @@ export function toolSkeleton(
 	return (args.format ?? "json") === "json"
 		? { text: JSON.stringify(sk, null, 2), meta }
 		: { text: skeletonText(sk), meta };
+}
+
+export function toolEditImpact(
+	repoRoot: string,
+	args: { symbol: string; max_hops?: number; format?: Format },
+): ToolResult {
+	const r = resolveSymbol(repoRoot, args.symbol);
+	if (!r.ok) {
+		return {
+			text: candidatesText(args.symbol, r.candidates),
+			meta: EMPTY_META,
+		};
+	}
+	const impact = getEditImpact(repoRoot, r.id, args.max_hops ?? 3);
+	const meta: ResultMeta = {
+		...EMPTY_META,
+		resolution_summary: {
+			resolved: impact.meta.resolved,
+			heuristic: impact.meta.heuristic,
+		},
+		truncated: impact.meta.truncated,
+		truncation_reason: impact.meta.truncated
+			? `blast radius exceeded the site cap`
+			: null,
+		notes: impact.meta.notes,
+	};
+	return (args.format ?? "json") === "json"
+		? { text: JSON.stringify(impact, null, 2), meta }
+		: { text: renderImpact(impact), meta };
 }
 
 export function toolRefresh(repoRoot: string): ToolResult {

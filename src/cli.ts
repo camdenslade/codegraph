@@ -5,6 +5,7 @@ import { incrementalUpdate } from "./ingest/incremental.js";
 import { watchRepo } from "./ingest/watch.js";
 import { findPath, type FindPathResult } from "./query/path.js";
 import { findSymbol } from "./query/find-symbol.js";
+import { getEditImpact, renderImpact } from "./query/impact.js";
 import { getNeighborhood, type Direction } from "./query/neighborhood.js";
 import { serializeNeighborhood } from "./query/serialize.js";
 import { getStats, type Stats } from "./query/stats.js";
@@ -182,6 +183,28 @@ query
 				return;
 			}
 			printPath(r);
+		},
+	);
+
+query
+	.command("impact <symbol>")
+	.description(
+		"blast radius of changing a symbol: callers, overrides, routes",
+	)
+	.option("--hops <n>", "reverse-slice depth, 1-5", "3")
+	.option("--format <fmt>", "text | json", "text")
+	.action(
+		(symbol: string, opts: { hops: string; format: "text" | "json" }) => {
+			const i = getEditImpact(
+				repoRoot(),
+				resolveSymbolOrExit(symbol),
+				Number(opts.hops),
+			);
+			console.log(
+				opts.format === "json"
+					? JSON.stringify(i, null, 2)
+					: renderImpact(i),
+			);
 		},
 	);
 
