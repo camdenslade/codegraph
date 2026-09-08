@@ -4,5 +4,7 @@ dist/
 .DS_Store
 .codegraph-cache/
 scratch.ts
-eval/report.*
+eval/report.md
+eval/report.json
 eval/repos/
+eval/tasks-local/

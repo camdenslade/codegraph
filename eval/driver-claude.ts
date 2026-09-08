@@ -1,9 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { homedir, platform, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 import type {
 	AgentDriver,
 	AgentRunOutput,
@@ -21,16 +26,38 @@ const CLI = join(
 const READ_TOOLS = new Set(["Read", "Grep", "Glob"]);
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
+/** `claude` on PATH, an explicit env override, or the VS Code extension binary. */
+function resolveClaudeBin(): string {
+	if (process.env.CODEGRAPH_EVAL_CLAUDE_BIN) {
+		return process.env.CODEGRAPH_EVAL_CLAUDE_BIN;
+	}
+	const exe = platform() === "win32" ? "claude.exe" : "claude";
+	const extRoot = join(homedir(), ".vscode", "extensions");
+	try {
+		const dirs = readdirSync(extRoot)
+			.filter((d) => d.startsWith("anthropic.claude-code-"))
+			.sort()
+			.reverse();
+		for (const d of dirs) {
+			const p = join(extRoot, d, "resources", "native-binary", exe);
+			if (existsSync(p)) return p;
+		}
+	} catch {
+		/* no extensions dir */
+	}
+	return "claude"; // hope it is on PATH
+}
+
 /**
  * Drives a headless `claude -p` run. Condition B gets a CodeGraph MCP server
  * scoped to the task repo; condition A has the codegraph tools disallowed and
- * is told to use grep/read. Requires the `claude` CLI on PATH (or set
- * CODEGRAPH_EVAL_CLAUDE_BIN).
+ * is told to use grep/read. Uses `claude` on PATH, else
+ * CODEGRAPH_EVAL_CLAUDE_BIN, else the VS Code extension's bundled binary.
  */
 export const claudeDriver: AgentDriver = {
 	name: "claude-cli",
 	async run(req: AgentRunRequest): Promise<AgentRunOutput> {
-		const bin = process.env.CODEGRAPH_EVAL_CLAUDE_BIN ?? "claude";
+		const bin = resolveClaudeBin();
 		const tmp = mkdtempSync(join(tmpdir(), "cg-eval-"));
 		const args = [
 			"-p",
@@ -67,9 +94,12 @@ export const claudeDriver: AgentDriver = {
 		}
 
 		const t0 = Date.now();
+		const timeoutMs = Number(
+			process.env.CODEGRAPH_EVAL_RUN_TIMEOUT_MS ?? 300_000,
+		);
 		let out: string;
 		try {
-			out = await spawnCollect(bin, args, req.repoRoot);
+			out = await spawnCollect(bin, args, req.repoRoot, timeoutMs);
 		} catch (err) {
 			rmSync(tmp, { recursive: true, force: true });
 			return {
@@ -101,15 +131,31 @@ function spawnCollect(
 	bin: string,
 	args: string[],
 	cwd: string,
+	timeoutMs: number,
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const p = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
 		let stdout = "";
 		let stderr = "";
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			p.kill("SIGKILL");
+		}, timeoutMs);
+
 		p.stdout.on("data", (d) => (stdout += d));
 		p.stderr.on("data", (d) => (stderr += d));
-		p.on("error", reject);
+		p.on("error", (e) => {
+			clearTimeout(timer);
+			reject(e);
+		});
 		p.on("close", (code) => {
+			clearTimeout(timer);
+			if (timedOut) {
+				// Return partial output so the run still scores, flagged.
+				resolve(stdout);
+				return;
+			}
 			if (code === 0 || stdout.length > 0) resolve(stdout);
 			else
 				reject(

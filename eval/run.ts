@@ -36,18 +36,28 @@ function parseArgs(argv: string[]): Options {
 	return {
 		driver: driverName === "claude" ? claudeDriver : mockDriver,
 		only: get("--only"),
-		maxTurns: Number(get("--max-turns") ?? 20),
+		maxTurns: Number(get("--max-turns") ?? 12),
 		model: get("--model"),
 		out: get("--out") ?? join(HERE, "report.md"),
 	};
 }
 
 function loadTasks(only?: string): Task[] {
-	const tasks = readdirSync(TASK_DIR)
-		.filter((f) => f.endsWith(".json"))
-		.map(
-			(f) => JSON.parse(readFileSync(join(TASK_DIR, f), "utf8")) as Task,
-		);
+	// tasks/ is the committed, reproducible-anywhere set; tasks-local/ (gitignored)
+	// holds machine-specific tasks that point at real repos by absolute path.
+	const dirs = [TASK_DIR, join(HERE, "tasks-local")];
+	const tasks: Task[] = [];
+	for (const dir of dirs) {
+		let files: string[];
+		try {
+			files = readdirSync(dir);
+		} catch {
+			continue;
+		}
+		for (const f of files.filter((x) => x.endsWith(".json"))) {
+			tasks.push(JSON.parse(readFileSync(join(dir, f), "utf8")) as Task);
+		}
+	}
 	return only ? tasks.filter((t) => t.id === only) : tasks;
 }
 
@@ -90,6 +100,7 @@ async function main(): Promise<void> {
 
 		for (const condition of ["A", "B"] as Condition[]) {
 			process.stderr.write(`  ${task.id} [${condition}] ... `);
+			const t0 = Date.now();
 			const out = await opts.driver.run({
 				prompt: task.prompt,
 				repoRoot,
@@ -107,8 +118,11 @@ async function main(): Promise<void> {
 			};
 			const s = score(task, run);
 			scored.push(s);
+			const secs = ((Date.now() - t0) / 1000).toFixed(0);
 			process.stderr.write(
-				`${s.pass ? "pass" : "FAIL"} (${out.metrics.totalTokens} tok, ${out.metrics.fileReads} reads)\n`,
+				`${s.pass ? "pass" : "FAIL"} ` +
+					`(${out.metrics.totalTokens} tok, ${out.metrics.fileReads} reads, ${secs}s` +
+					`${out.error ? `, ${out.error}` : ""})\n`,
 			);
 		}
 	}
