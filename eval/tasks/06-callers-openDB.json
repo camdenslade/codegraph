@@ -1,0 +1,10 @@
+{
+	"id": "callers-openDB",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Which functions call `openDB`? List each with its file. (openDB is defined in src/store/db.ts.)",
+	"rubric": {
+		"expectSymbols": ["getStats", "getNeighborhood", "findPath", "getEditImpact", "getSkeleton"],
+		"expectFiles": ["src/query/stats.ts", "src/query/neighborhood.ts", "src/query/path.ts"]
+	}
+}

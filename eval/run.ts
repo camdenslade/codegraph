@@ -52,7 +52,11 @@ function loadTasks(only?: string): Task[] {
 }
 
 function repoRootFor(task: Task): string {
-	return task.repo === "self" ? REPO_ROOT : resolve(task.repo);
+	if (task.repo === "self") return REPO_ROOT;
+	if (task.repo.startsWith("fixture:")) {
+		return join(HERE, "..", "test", "fixtures", task.repo.slice(8));
+	}
+	return resolve(task.repo);
 }
 
 /** Ensure the graph exists for condition B (and for the mock driver). */

@@ -1,0 +1,11 @@
+{
+	"id": "impact-EdgeRow",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "The `EdgeRow` interface (src/store/persist.ts) is widely used. What is the blast radius of changing its shape? Name the files that would need review.",
+	"rubric": {
+		"expectFiles": ["src/store/persist.ts", "src/ingest/semantic.ts", "src/ingest/passes.ts"],
+		"expectSymbols": ["persistEdges"],
+		"forbid": ["no other files", "only used in persist.ts"]
+	}
+}

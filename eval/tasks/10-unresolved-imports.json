@@ -1,0 +1,10 @@
+{
+	"id": "unresolved-imports",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Does this project import anything the graph could not resolve to an in-repo file? If so, name a few of the unresolved import specifiers.",
+	"rubric": {
+		"expectSymbols": ["typescript", "tree-sitter"],
+		"forbid": ["everything resolves", "no unresolved imports"]
+	}
+}

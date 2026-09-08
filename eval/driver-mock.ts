@@ -35,37 +35,75 @@ const emptyMetrics = (): RunMetrics => ({
  * CodeGraph CLI (condition B) or by grepping (condition A), then echoing what
  * it found. It is NOT a real agent - it exists to prove the rig end to end.
  */
+const cg = (repoRoot: string, args: string[]): string =>
+	execFileSync(process.execPath, [CLI, "-C", repoRoot, ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+
+/** Rough intent from the prompt, so the mock picks a plausible command. */
+function intent(
+	prompt: string,
+): "impact" | "skeleton" | "stats" | "neighborhood" {
+	const p = prompt.toLowerCase();
+	if (/blast radius|impact|would need review|safe to delete/.test(p)) {
+		return "impact";
+	}
+	if (/architectural area|grouped by how|module.*import each other/.test(p)) {
+		return "skeleton";
+	}
+	if (/unresolved|could not resolve/.test(p)) return "stats";
+	return "neighborhood";
+}
+
 export const mockDriver: AgentDriver = {
 	name: "mock",
 	async run(req: AgentRunRequest): Promise<AgentRunOutput> {
 		const t0 = Date.now();
 		const metrics = emptyMetrics();
 		const want = extractSymbol(req.prompt);
+		const kind = intent(req.prompt);
 		let answer = "";
 
 		try {
-			if (req.condition === "B" && want) {
-				const out = execFileSync(
-					process.execPath,
-					[
-						CLI,
-						"-C",
-						req.repoRoot,
+			if (req.condition === "B") {
+				metrics.graphCalls = 1;
+				if (kind === "skeleton") {
+					metrics.toolCalls[
+						"mcp__codegraph__get_architectural_skeleton"
+					] = 1;
+					answer = cg(req.repoRoot, ["skeleton"]).split(
+						"\nimports",
+					)[0]!;
+				} else if (kind === "stats") {
+					metrics.toolCalls["mcp__codegraph__get_edit_impact"] = 1;
+					answer = cg(req.repoRoot, ["stats"]);
+				} else if (kind === "impact" && want) {
+					metrics.toolCalls["mcp__codegraph__get_edit_impact"] = 1;
+					answer = cg(req.repoRoot, [
+						"query",
+						"impact",
+						want,
+						"--hops",
+						"2",
+					]);
+				} else if (want) {
+					metrics.toolCalls[
+						"mcp__codegraph__get_symbol_neighborhood"
+					] = 1;
+					answer = cg(req.repoRoot, [
 						"query",
 						"neighborhood",
 						want,
 						"--dir",
-						"upstream",
+						"both",
 						"--depth",
 						"1",
-						"--full",
-					],
-					{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-				);
-				metrics.graphCalls = 1;
-				metrics.toolCalls["mcp__codegraph__get_symbol_neighborhood"] =
-					1;
-				answer = out;
+					]);
+				} else {
+					metrics.graphCalls = 0;
+					answer = "(mock: no symbol found in prompt)";
+				}
 			} else if (want) {
 				const out = execFileSync(
 					"grep",

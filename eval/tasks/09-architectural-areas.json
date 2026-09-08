@@ -1,0 +1,9 @@
+{
+	"id": "architectural-areas",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "What are the main architectural areas of the src/ directory, grouped by how the modules import each other?",
+	"rubric": {
+		"expectSymbols": ["src/ingest", "src/query", "src/store"]
+	}
+}

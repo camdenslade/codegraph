@@ -1,0 +1,11 @@
+{
+	"id": "java-heritage",
+	"repo": "fixture:java-app",
+	"kind": "comprehension",
+	"prompt": "What does the `UserRepo` class extend or implement, and where is that supertype defined?",
+	"rubric": {
+		"expectSymbols": ["Repo"],
+		"expectFiles": ["Repo.java"],
+		"forbid": ["JpaRepository", "does not implement"]
+	}
+}

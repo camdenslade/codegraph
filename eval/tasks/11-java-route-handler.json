@@ -1,0 +1,10 @@
+{
+	"id": "java-route-handler",
+	"repo": "fixture:java-app",
+	"kind": "comprehension",
+	"prompt": "What HTTP route serves GET /api/users, and which Java method handles it?",
+	"rubric": {
+		"expectSymbols": ["UserController", "list"],
+		"expectFiles": ["UserController.java"]
+	}
+}

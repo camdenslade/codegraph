@@ -147,7 +147,7 @@ scope, whether the result was truncated, and `total_neighbors` vs
 | `DECLARES`               | module to the symbols it declares                                  |
 | `CALLS`                  | function/method to the function/method it invokes                  |
 | `CALLS` (heuristic)      | client HTTP call to the `route` node it hits (frontend to backend) |
-| `REFERENCES`             | non-call use of a symbol (value position)                          |
+| `REFERENCES`             | non-call use of a symbol (value or type position)                  |
 | `EXTENDS` / `IMPLEMENTS` | class/interface to its supertype                                   |
 | `HANDLES`                | route to its handler function/component                            |
 
@@ -218,7 +218,8 @@ npm run eval                                   # self-test with the mock driver
 npm run eval -- --driver claude --model <id>   # real runs
 ```
 
-Ships with 5 seed tasks; see [eval/README.md](eval/README.md).
+Ships with a 13-task corpus (self + `java-app` fixture, reproducible anywhere);
+see [eval/README.md](eval/README.md).
 
 ---
 
@@ -232,6 +233,7 @@ Ships with 5 seed tasks; see [eval/README.md](eval/README.md).
 - [docs/languages.md](docs/languages.md) - per-language capability matrix and a
   guide to adding a language.
 - [docs/limitations.md](docs/limitations.md) - known gaps and what is deferred.
+- [CHANGELOG.md](CHANGELOG.md) - what is in the current build.
 
 ---
 

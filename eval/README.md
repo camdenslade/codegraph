@@ -67,16 +67,20 @@ A task is a JSON file in `tasks/`:
 ```
 
 - `repo` - `"self"` (this repo) or an absolute path.
+- `repo` - `"self"`, `"fixture:<name>"` (a dir under `test/fixtures/`), or an
+  absolute path.
 - `kind` - `comprehension` (score the answer text) or `change` (also score which
   files were edited via `expectEdits` / `forbidEdits`).
 - `rubric.expectSymbols` / `expectFiles` - substrings the answer must contain.
 - `rubric.forbid` - substrings that must NOT appear (hallucinated call sites,
   wrong conclusions).
 
-The seed set is five comprehension tasks on this repo, enough to prove the rig
-end to end. The real §9 set - 15 to 25 rubric-scored tasks on 2 to 3
-open-source TypeScript repos plus a dogfood repo - drops into `tasks/` the same
-way.
+The bundled set is 13 comprehension tasks on this repo and the `java-app`
+fixture, covering callers, paths, edit impact, module areas, unresolved
+imports, Spring routes, Java heritage, and a full-stack (TS -> route -> Java)
+trace. It is reproducible anywhere - no external checkout. The wider §9 set
+(15 to 25 tasks on 2 to 3 open-source repos) drops into `tasks/` the same way,
+with `repo` set to an absolute path.
 
 ## Limitations of the rig
 

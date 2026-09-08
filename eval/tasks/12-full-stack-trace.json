@@ -1,0 +1,9 @@
+{
+	"id": "full-stack-trace",
+	"repo": "fixture:java-app",
+	"kind": "comprehension",
+	"prompt": "Trace how the frontend function `loadUsers` ends up reading user data from the backend. Name every hop: the frontend function, the route, the controller method, and the repository method.",
+	"rubric": {
+		"expectSymbols": ["loadUsers", "/api/users", "UserController", "list", "UserRepo", "all"]
+	}
+}

@@ -13,12 +13,17 @@
 		"llm",
 		"code-intelligence"
 	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/camdenslade/codegraph.git"
+	},
 	"bin": {
 		"codegraph": "./dist/cli.js"
 	},
 	"files": [
 		"dist",
 		"README.md",
+		"CHANGELOG.md",
 		"LICENSE",
 		"docs"
 	],
@@ -30,7 +35,8 @@
 		"lint": "eslint src eval",
 		"format": "prettier --write .",
 		"check": "tsc --noEmit && tsc --noEmit -p tsconfig.eval.json && eslint src eval && vitest run",
-		"eval": "tsx eval/run.ts"
+		"eval": "tsx eval/run.ts",
+		"prepublishOnly": "npm run check && npm run build"
 	},
 	"engines": {
 		"node": ">=20"

@@ -1,0 +1,11 @@
+{
+	"id": "type-users-NodeIndex",
+	"repo": "self",
+	"kind": "comprehension",
+	"prompt": "Which code uses the `NodeIndex` interface (as a parameter type, return type, or field)? Give function + file for each.",
+	"rubric": {
+		"expectSymbols": ["buildNodeIndex", "resolveEdges"],
+		"expectFiles": ["src/ingest/node-index.ts", "src/lang/types.ts"],
+		"forbid": ["not used anywhere", "no references"]
+	}
+}
