@@ -281,7 +281,10 @@ function collectType(
 }
 
 function headingOf(node: SyntaxNode, source: string): string {
-	const body = node.namedChildren.find((c) => c.type.endsWith("_body"));
+	// Type bodies are `*_body`; method / constructor bodies are `block`.
+	const body = node.namedChildren.find(
+		(c) => c.type.endsWith("_body") || c.type === "block",
+	);
 	const end = body ? body.startIndex : node.endIndex;
 	return source
 		.slice(node.startIndex, end)
@@ -371,17 +374,29 @@ function extractHeritage(absPath: string): HeritageRef[] {
 	return refs;
 }
 
-/** Simple names of every type_identifier under a heritage clause. */
+/**
+ * Simple names of the top-level supertypes in a heritage clause. Only the base
+ * of each entry in the type_list - NOT the generic arguments, so
+ * `JpaRepository<DuesPayment, UUID>` yields `JpaRepository`, not `DuesPayment`.
+ */
 function typeNames(clause: SyntaxNode): string[] {
+	const list =
+		clause.namedChildren.find((c) => c.type === "type_list") ?? clause;
 	const out: string[] = [];
-	const walk = (n: SyntaxNode): void => {
-		if (n.type === "type_identifier") out.push(n.text);
-		else if (n.type === "scoped_type_identifier") {
-			out.push(n.text.split(".").pop() ?? n.text);
-		}
-		for (const c of n.namedChildren) walk(c);
-	};
-	walk(clause);
+	for (const entry of list.namedChildren) {
+		const base =
+			entry.type === "generic_type"
+				? entry.namedChildren.find(
+						(c) =>
+							c.type === "type_identifier" ||
+							c.type === "scoped_type_identifier",
+					)
+				: entry.type === "type_identifier" ||
+					  entry.type === "scoped_type_identifier"
+					? entry
+					: undefined;
+		if (base) out.push(base.text.split(".").pop() ?? base.text);
+	}
 	return out;
 }
 

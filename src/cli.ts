@@ -131,10 +131,16 @@ query
 	.option("--depth <n>", "hops, max 3", "2")
 	.option("--dir <direction>", "upstream | downstream | both", "both")
 	.option("--format <fmt>", "text | json", "text")
+	.option("--full", "emit every reachable node/edge, no token budget")
 	.action(
 		(
 			symbol: string,
-			opts: { depth: string; dir: Direction; format: "text" | "json" },
+			opts: {
+				depth: string;
+				dir: Direction;
+				format: "text" | "json";
+				full?: boolean;
+			},
 		) => {
 			const id = resolveSymbolOrExit(symbol);
 			const nh = getNeighborhood(
@@ -144,7 +150,10 @@ query
 				opts.dir,
 			);
 			console.log(
-				serializeNeighborhood(nh, { format: opts.format }).content,
+				serializeNeighborhood(nh, {
+					format: opts.format,
+					full: opts.full,
+				}).content,
 			);
 		},
 	);

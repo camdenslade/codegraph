@@ -27,7 +27,9 @@ const TOOLS = [
 		description:
 			"Callers, callees, imports and type relations around a symbol, within N hops. " +
 			"Signatures and file:line only, never bodies. Treat it as a lead, not ground " +
-			"truth - check meta.truncated and meta.unresolved_in_scope before concluding.",
+			"truth - check meta.truncated, meta.total_neighbors vs meta.shown_neighbors, " +
+			"and meta.unresolved_in_scope before concluding. If meta.truncated is set, " +
+			"pass full=true to get every caller/callee.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -41,6 +43,12 @@ const TOOLS = [
 					type: "string",
 					enum: ["upstream", "downstream", "both"],
 					default: "both",
+				},
+				full: {
+					type: "boolean",
+					default: false,
+					description:
+						"emit every reachable node/edge with no token budget; use when the default result is truncated",
 				},
 				format: FORMAT_PROP,
 			},

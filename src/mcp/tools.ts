@@ -17,6 +17,9 @@ const EMPTY_META: ResultMeta = {
 	unresolved_in_scope: [],
 	truncated: false,
 	truncation_reason: null,
+	total_neighbors: 0,
+	shown_neighbors: 0,
+	notes: [],
 };
 
 /** Resolve a name to exactly one id, or hand back candidates (FR-MCP-2: never guess). */
@@ -78,6 +81,7 @@ export function toolNeighborhood(
 		depth?: number;
 		direction?: Direction;
 		format?: Format;
+		full?: boolean;
 	},
 ): ToolResult {
 	const r = resolveSymbol(repoRoot, args.symbol);
@@ -93,7 +97,10 @@ export function toolNeighborhood(
 		args.depth ?? 2,
 		args.direction ?? "both",
 	);
-	const s = serializeNeighborhood(nh, { format: args.format ?? "json" });
+	const s = serializeNeighborhood(nh, {
+		format: args.format ?? "json",
+		full: args.full,
+	});
 	return { text: s.content, meta: s.meta };
 }
 
