@@ -17,12 +17,10 @@ does not do yet, so you know when to still open the file.
   built from variables or concatenation, a base-URL constant, or a non-`/api`
   prefix are missed. The match is method + path only, so two routes that differ
   only by content-type or headers are indistinguishable.
-- **No type-reference edges.** `get_symbol_neighborhood` on an `interface` or
-  `type-alias` returns no edges for the places that use it as a type. "What
-  uses this type" degrades to the module-import list, which is broader than the
-  real set. `RETURNS_TYPE` / `PARAM_TYPE` edges are planned.
-- **`REFERENCES` is TypeScript-only and conservative.** Value-position uses of
-  a tracked symbol only. Java has no `REFERENCES` edges.
+- **`REFERENCES` covers value and type positions, TypeScript only.** A use of an
+  in-repo type as a type (`: Foo`, `Foo<T>`) is a `REFERENCES` edge; there is no
+  distinction between "used as a return type" and "used as a param type". Java
+  has no `REFERENCES` edges.
 - **Function overloads collapse.** Two functions with the same qualified name
   produce one node (last wins).
 - **`.d.ts` files are skipped.** Types declared only in ambient declarations are
@@ -31,11 +29,12 @@ does not do yet, so you know when to still open the file.
 ## Routes
 
 - **`@RequestMapping(method = {GET, POST})` arrays** take the first verb only.
-- **Wrapped React routes collapse to the wrapper.** `<ProtectedRoute><Dues/>
-</ProtectedRoute>` links the route to `ProtectedRoute`, not `Dues`, so two
-  routes wrapping different pages can look identical from the route graph.
-- **React Router object config is not read.** Only JSX `<Route>` elements;
-  `createBrowserRouter([...])` / `useRoutes([...])` are ignored.
+- **React route unwrapping is heuristic.** `<Wrapper><Page/></Wrapper>` resolves
+  to the last non-wrapper PascalCase tag, using a fixed wrapper list
+  (`ProtectedRoute`, `Suspense`, `Layout`, ...). A custom wrapper not on that
+  list, or `<Layout><Page/><Footer/></Layout>`, can pick the wrong component.
+- **Nested route `children` path composition is not done.** Object config
+  `{ path: "/x", children: [{ path: "y" }] }` records `/x` and `y`, not `/x/y`.
 
 ## Incremental update
 
@@ -60,9 +59,9 @@ reprocessing importers.
 
 ## Serving
 
-- **`serve` only detects a cold cache, not a stale one.** A warm-but-outdated
-  cache serves old data until `refresh` (manually, or via `--watch`, or the
-  `refresh` MCP tool) runs.
+- **`serve` runs one incremental update at startup**, then serves. Files that
+  change while the server is running are not picked up unless the client calls
+  the `refresh` tool (or you run `codegraph refresh --watch` separately).
 - **`--watch` SIGINT cleanup on Windows** occasionally needs a second signal.
 
 ## Scale
@@ -74,10 +73,17 @@ reprocessing importers.
 - Memory during ingest is dominated by the single `ts.Program`. Not profiled
   against a hard ceiling.
 
+## Module clustering
+
+- The `skeleton` "areas" come from deterministic label propagation over the
+  `IMPORTS` graph. It is a fast heuristic, not spectral/modularity-optimal
+  clustering - a large hub module can pull unrelated areas together, and the
+  cluster label is a path summary, not a semantic name.
+
 ## Deferred by design (v1.1+)
 
 - Second language beyond Java (Rust, Swift, Go, C/C++, JS, Python, SQL).
-- `RETURNS_TYPE` / `PARAM_TYPE` edges.
+- Distinct `RETURNS_TYPE` / `PARAM_TYPE` edges (type uses are `REFERENCES` now).
 - DOT output format.
 - LSP-grade Java resolution (Eclipse JDT).
 - The full evaluation task set. The harness itself is built (`eval/`, two

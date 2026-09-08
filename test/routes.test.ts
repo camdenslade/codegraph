@@ -21,7 +21,7 @@ describe("route extractors", () => {
 		dump = dumpGraph(repo);
 	});
 
-	it("creates a route node per declared route", () => {
+	it("creates a route node per declared route (JSX + object config)", () => {
 		const routes = dump.nodes
 			.filter((n) => n.kind === "route")
 			.map((n) => n.name)
@@ -32,10 +32,12 @@ describe("route extractors", () => {
 			"POST /users",
 			"ROUTE /",
 			"ROUTE /about",
+			"ROUTE /cfg",
+			"ROUTE /dash",
 		]);
 	});
 
-	it("links resolvable handlers with HANDLES edges", () => {
+	it("links handlers, unwrapping guard components", () => {
 		const handles = dump.edges
 			.filter((e) => e.kind === "HANDLES")
 			.map((e) => `${e.src} -> ${e.dst}`)
@@ -45,6 +47,10 @@ describe("route extractors", () => {
 			"route:api.ts:GET /users/:id -> function:handlers.ts:getUser",
 			"route:router.tsx:ROUTE / -> function:handlers.ts:Home",
 			"route:router.tsx:ROUTE /about -> function:handlers.ts:Home",
+			// object config { path: "/cfg", element: <Home /> }
+			"route:router.tsx:ROUTE /cfg -> function:handlers.ts:Home",
+			// <ProtectedRoute><Home /></ProtectedRoute> resolves past the wrapper
+			"route:router.tsx:ROUTE /dash -> function:handlers.ts:Home",
 		]);
 	});
 

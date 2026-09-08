@@ -99,6 +99,14 @@ program
 			console.log(JSON.stringify(sk, null, 2));
 			return;
 		}
+		console.log(`areas (${sk.clusters.length}, by import coupling)`);
+		for (const c of sk.clusters) {
+			console.log(
+				`  ${c.label}  -  ${c.modules.length} modules, ` +
+					`${c.internalEdges} internal / ${c.externalEdges} crossing`,
+			);
+		}
+		console.log();
 		for (const m of sk.modules) {
 			console.log(m.path);
 			for (const name of m.exports) console.log(`  · ${name}`);
@@ -214,8 +222,9 @@ program
 	.action(async () => {
 		const root = repoRoot();
 
-		// FR-MCP-4: cold cache -> ingest first, progress to stderr (stdout is the
-		// JSON-RPC channel and must stay clean).
+		// Progress goes to stderr; stdout is the JSON-RPC channel and must stay
+		// clean. Cold cache -> full ingest (FR-MCP-4). Warm cache -> a quick
+		// incremental update so a stale cache does not serve old data.
 		const db = openDB(root);
 		const count = (
 			db.prepare("SELECT COUNT(*) AS n FROM nodes").get() as { n: number }
@@ -229,6 +238,14 @@ program
 				`codegraph: ${r.filesParsed} files, ${r.nodeCount} nodes, ` +
 					`${r.edgeCount} edges in ${r.elapsedMs}ms\n`,
 			);
+		} else {
+			const { report } = incrementalUpdate(root);
+			if (!report.noop) {
+				process.stderr.write(
+					`codegraph: refreshed (+${report.added.length} ~${report.changed.length} ` +
+						`-${report.removed.length}) in ${report.elapsedMs}ms\n`,
+				);
+			}
 		}
 
 		await runServer(root);

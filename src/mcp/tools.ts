@@ -213,6 +213,14 @@ function pathText(r: FindPathResult): string {
 
 function skeletonText(sk: Skeleton): string {
 	const out: string[] = [];
+	out.push(`areas (${sk.clusters.length}, by import coupling)`);
+	for (const c of sk.clusters) {
+		out.push(
+			`  ${c.label}  -  ${c.modules.length} modules, ` +
+				`${c.internalEdges} internal / ${c.externalEdges} crossing`,
+		);
+	}
+	out.push("");
 	for (const m of sk.modules) {
 		out.push(m.path);
 		for (const e of m.exports) out.push(`  · ${e}`);

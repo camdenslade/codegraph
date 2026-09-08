@@ -5,11 +5,28 @@ import {
 	type RouteHit,
 } from "./types.js";
 
+// Wrapper components that are not the "page" a route renders.
+const WRAPPERS = new Set([
+	"ProtectedRoute",
+	"PrivateRoute",
+	"PublicRoute",
+	"RequireAuth",
+	"AuthGuard",
+	"RouteGuard",
+	"Suspense",
+	"Layout",
+	"AppLayout",
+	"MainLayout",
+	"Outlet",
+	"Fragment",
+	"ErrorBoundary",
+]);
+
 /**
- * React Router. Matches `<Route path="/x" element={<Thing />} />` and
- * `<Route path="/x" Component={Thing} />` (also `component={...}`). The route's
- * "handler" is the component. Object-router config (createBrowserRouter([...]))
- * is deferred to v1.1.
+ * React Router. Matches JSX `<Route path element/component>` (unwrapping guard
+ * components like ProtectedRoute to the real page) and flat object config
+ * `createBrowserRouter([{ path, element }])` / `useRoutes([...])`. Nested
+ * `children` path composition is not done.
  */
 export const reactRouterExtractor: RouteExtractor = {
 	name: "react-router",
@@ -21,6 +38,8 @@ export const reactRouterExtractor: RouteExtractor = {
 				ts.isJsxOpeningElement(node)
 			) {
 				routeElement(node, ctx, hits);
+			} else if (ts.isObjectLiteralExpression(node)) {
+				routeObject(node, ctx, hits);
 			}
 			ts.forEachChild(node, visit);
 		};
@@ -41,16 +60,45 @@ function routeElement(
 	if (!path) return;
 
 	const compExpr =
-		componentFromAttr(attrs.element) ??
-		componentFromAttr(attrs.Component) ??
-		componentFromAttr(attrs.component);
+		componentFrom(attrs.element?.initializer) ??
+		componentFrom(attrs.Component?.initializer) ??
+		componentFrom(attrs.component?.initializer);
 
+	pushRoute(el, ctx, hits, path, compExpr);
+}
+
+function routeObject(
+	obj: ts.ObjectLiteralExpression,
+	ctx: RouteContext,
+	hits: RouteHit[],
+): void {
+	const props = objProps(obj);
+	const path = props.path && stringOfExpr(props.path);
+	if (!path) return;
+	if (!props.element && !props.Component && !props.component && !props.lazy) {
+		return; // a plain object that happens to have a "path" key
+	}
+	const compExpr =
+		componentFrom(props.element) ??
+		componentFrom(props.Component) ??
+		componentFrom(props.component) ??
+		componentFrom(props.lazy);
+	pushRoute(obj, ctx, hits, path, compExpr);
+}
+
+function pushRoute(
+	node: ts.Node,
+	ctx: RouteContext,
+	hits: RouteHit[],
+	path: string,
+	compExpr: ts.Expression | undefined,
+): void {
 	hits.push({
 		method: "ROUTE",
 		routePath: path,
 		framework: "react-router",
-		line: ctx.lineOf(el),
-		span: { start: el.getStart(ctx.sourceFile), end: el.getEnd() },
+		line: ctx.lineOf(node),
+		span: { start: node.getStart(ctx.sourceFile), end: node.getEnd() },
 		handler: compExpr
 			? classifyComponent(compExpr, ctx)
 			: { kind: "unresolved", text: "<no element/component>" },
@@ -69,27 +117,59 @@ function classifyComponent(
 	};
 }
 
-/** `element={<Thing />}` -> the `Thing` identifier; `Component={Thing}` -> `Thing`. */
-function componentFromAttr(
-	attr: ts.JsxAttribute | undefined,
+/**
+ * The page component referenced by an `element` / `Component` value: the last
+ * non-wrapper PascalCase JSX tag, or a bare identifier / property access.
+ * Unwraps `<ProtectedRoute><Dues /></ProtectedRoute>` to `Dues`.
+ */
+function componentFrom(
+	node: ts.Expression | undefined,
 ): ts.Expression | undefined {
-	if (!attr || !attr.initializer) return undefined;
-	if (!ts.isJsxExpression(attr.initializer)) return undefined;
-	const inner = attr.initializer.expression;
-	if (!inner) return undefined;
-	if (ts.isJsxSelfClosingElement(inner) && ts.isIdentifier(inner.tagName)) {
-		return inner.tagName;
+	if (!node) return undefined;
+	let inner: ts.Node = node;
+	if (ts.isJsxExpression(inner)) {
+		if (!inner.expression) return undefined;
+		inner = inner.expression;
 	}
 	if (
-		ts.isJsxElement(inner) &&
-		ts.isIdentifier(inner.openingElement.tagName)
+		(ts.isIdentifier(inner) && /^[A-Z]/.test(inner.text)) ||
+		ts.isPropertyAccessExpression(inner)
 	) {
-		return inner.openingElement.tagName;
+		return inner as ts.Expression;
 	}
-	if (ts.isIdentifier(inner) || ts.isPropertyAccessExpression(inner)) {
-		return inner;
+	// `lazy: () => import("./Page")` -> the module specifier
+	if (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner)) {
+		let spec: ts.Expression | undefined;
+		const findImport = (n: ts.Node) => {
+			if (
+				ts.isCallExpression(n) &&
+				n.expression.kind === ts.SyntaxKind.ImportKeyword &&
+				n.arguments[0] &&
+				ts.isStringLiteralLike(n.arguments[0])
+			) {
+				spec = n.arguments[0];
+			}
+			ts.forEachChild(n, findImport);
+		};
+		findImport(inner);
+		return spec;
 	}
-	return undefined;
+
+	const tags: ts.Identifier[] = [];
+	const walk = (n: ts.Node) => {
+		if (
+			(ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) &&
+			ts.isIdentifier(n.tagName) &&
+			/^[A-Z]/.test(n.tagName.text)
+		) {
+			tags.push(n.tagName);
+		}
+		ts.forEachChild(n, walk);
+	};
+	walk(inner);
+	const pages = tags.filter((t) => !WRAPPERS.has(t.text));
+	return (pages[pages.length - 1] ?? tags[tags.length - 1]) as
+		ts.Expression | undefined;
 }
 
 function jsxAttrs(
@@ -104,16 +184,26 @@ function jsxAttrs(
 	return out;
 }
 
+function objProps(
+	obj: ts.ObjectLiteralExpression,
+): Record<string, ts.Expression | undefined> {
+	const out: Record<string, ts.Expression | undefined> = {};
+	for (const p of obj.properties) {
+		if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) {
+			out[p.name.text] = p.initializer;
+		}
+	}
+	return out;
+}
+
 function stringOfAttr(attr: ts.JsxAttribute): string | null {
-	const init = attr.initializer;
-	if (!init) return null;
-	if (ts.isStringLiteral(init)) return init.text;
-	if (
-		ts.isJsxExpression(init) &&
-		init.expression &&
-		ts.isStringLiteral(init.expression)
-	) {
-		return init.expression.text;
+	return attr.initializer ? stringOfExpr(attr.initializer) : null;
+}
+
+function stringOfExpr(node: ts.Node): string | null {
+	if (ts.isStringLiteralLike(node)) return node.text;
+	if (ts.isJsxExpression(node) && node.expression) {
+		return stringOfExpr(node.expression);
 	}
 	return null;
 }

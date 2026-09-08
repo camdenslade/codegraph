@@ -84,7 +84,9 @@ The blast radius of changing `symbol`, to plan a refactor before touching code:
 ### `get_architectural_skeleton(format?)`
 
 The module graph (files + import edges) plus each module's exported symbol
-names. No bodies. Use to orient in an unfamiliar codebase.
+names, and `clusters` - modules grouped into import-coupled areas with a
+path-summary label and internal/crossing edge counts. No bodies. Use to orient
+in an unfamiliar codebase.
 
 ### `refresh()`
 

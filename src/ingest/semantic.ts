@@ -152,7 +152,8 @@ export function semanticPass(
 			)
 				return;
 			if (isDeclarationName(id)) return;
-			if (ts.isTypeReferenceNode(p) || ts.isQualifiedName(p)) return; // type position
+			// `A.B` in a type: only the right-hand name is the reference.
+			if (ts.isQualifiedName(p) && p.right !== id) return;
 			if (
 				ts.isExpressionWithTypeArguments(p) &&
 				ts.isHeritageClause(p.parent)
@@ -160,6 +161,10 @@ export function semanticPass(
 				return; // already captured as EXTENDS / IMPLEMENTS
 			}
 
+			// Type positions (`: Foo`, `Foo<T>`, `keyof Foo`, ...) are kept: an
+			// in-repo type used as a type is a real REFERENCES edge. External
+			// types (Promise, Array, React.FC) resolve into .d.ts and are
+			// dropped by idForDeclaration.
 			const decl = resolveDecl(checker.getSymbolAtLocation(id));
 			const targetId = decl ? idx.idForDeclaration(decl) : null;
 			if (targetId)

@@ -1,4 +1,5 @@
 import { openDB } from "../store/db.js";
+import { computeModuleClusters, type ModuleCluster } from "./clusters.js";
 
 export interface SkeletonModule {
 	path: string; // repo-relative module path
@@ -13,6 +14,7 @@ export interface SkeletonEdge {
 export interface Skeleton {
 	modules: SkeletonModule[];
 	imports: SkeletonEdge[];
+	clusters: ModuleCluster[]; // cohesive areas by import coupling
 }
 
 /** FR-SLICE-6: module nodes + IMPORTS edges + per-module exported names, no bodies */
@@ -61,6 +63,7 @@ export function getSkeleton(repoRoot: string): Skeleton {
 				fromPath: r.fromPath,
 				toPath: r.toPath,
 			})),
+			clusters: computeModuleClusters(db),
 		};
 	} finally {
 		db.close();

@@ -93,7 +93,10 @@ unresolvable library calls; the TypeScript-only rate is much higher.
 ## `skeleton [path] [--json]`
 
 The module graph: every `module` node, its `IMPORTS` edges, and its exported
-symbol names. No bodies. Use it to orient in an unfamiliar repo.
+symbol names, plus **areas** - modules grouped into import-coupled clusters
+(deterministic label propagation over the import graph, so a group can cross
+directory lines or split a big directory by real coupling). No bodies. Use it to
+orient in an unfamiliar repo.
 
 ```
 codegraph skeleton .

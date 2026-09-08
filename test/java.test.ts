@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { ingest } from "../src/ingest/index.js";
 import { dumpGraph } from "../src/query/dump.js";
 import { getEditImpact } from "../src/query/impact.js";
+import { getSkeleton } from "../src/query/skeleton.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
@@ -107,6 +108,18 @@ describe("java analyzer (M1 level)", () => {
 			"method:src/main/java/com/x/repo/UserController.java:UserController.list -> " +
 				"method:src/main/java/com/x/repo/UserRepo.java:UserRepo.all",
 		);
+	});
+
+	it("groups modules into import-coupled clusters in the skeleton", () => {
+		const sk = getSkeleton(repo);
+		expect(sk.clusters.length).toBeGreaterThan(0);
+		// the frontend api.ts, the java repo/model/controller files, all import
+		// something in-repo, so they land in real clusters, not "isolated".
+		const clustered = new Set(sk.clusters.flatMap((c) => c.modules));
+		expect(
+			clustered.has("src/main/java/com/x/repo/UserController.java"),
+		).toBe(true);
+		expect(clustered.has("frontend/api.ts")).toBe(true);
 	});
 
 	it("reports edit impact: callers + the routes that reach a symbol", () => {

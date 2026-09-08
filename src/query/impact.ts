@@ -31,6 +31,8 @@ export interface EditImpact {
 		heuristic: number;
 		blastRadius: number;
 		estReviewTokens: number;
+		/** Nothing in the graph references this - deleting it breaks no known edge. */
+		deletionSafe: boolean;
 		notes: string[];
 		truncated: boolean;
 	};
@@ -242,6 +244,7 @@ export function getEditImpact(
 				heuristic,
 				blastRadius: all.length,
 				estReviewTokens: direct.length * 30 + transitive.length * 12,
+				deletionSafe: all.length === 0 && moduleImporters === 0,
 				notes,
 				truncated,
 			},
@@ -262,6 +265,9 @@ export function renderImpact(i: EditImpact): string {
 	out.push(
 		`  blast radius: ${i.meta.blastRadius} sites  (~${i.meta.estReviewTokens} tokens to review the direct ones)`,
 	);
+	if (i.meta.deletionSafe) {
+		out.push("  deletion: nothing in the graph references this");
+	}
 
 	const list = (label: string, sites: ImpactSite[]) => {
 		if (sites.length === 0) return;
