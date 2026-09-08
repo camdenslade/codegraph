@@ -64,7 +64,3 @@ function loadGitIgnore(root: string) {
 	if (existsSync(path)) ig.add(readFileSync(path, "utf-8"));
 	return ig;
 }
-
-function formatTsError(d: ts.Diagnostic): string {
-	return ts.flattenDiagnosticMessageText(d.messageText, "\n");
-}

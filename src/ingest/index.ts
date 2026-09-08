@@ -1,20 +1,19 @@
+import { readFileSync, statSync } from "node:fs";
+import { canonicalRoot } from "../store/db.js";
 import { performance } from "node:perf_hooks";
+import { ANALYZERS } from "../lang/registry.js";
+import type { ParsedUnit } from "../lang/types.js";
 import { openDB } from "../store/db.js";
 import {
 	hashText,
 	persistEdges,
-	persistFiles,
 	persistRouteNodes,
+	persistUnits,
 	persistUnresolved,
+	toRelPath,
+	type UnitInput,
 } from "../store/persist.js";
-import { discoverFiles } from "./discover.js";
-import { createProgram } from "./program.js";
-import {
-	parseFiles,
-	resolveImportEdges,
-	routePass,
-	runSemantic,
-} from "./passes.js";
+import { buildNodeIndex } from "./node-index.js";
 
 export interface IngestOptions {
 	fresh?: boolean;
@@ -31,46 +30,68 @@ export interface IngestReport {
 	elapsedMs: number;
 }
 
+interface AnalyzerRun {
+	discovered: ReturnType<(typeof ANALYZERS)[number]["discoverFiles"]>;
+	units: ParsedUnit[];
+	errors: { file: string; message: string }[];
+	analyzer: (typeof ANALYZERS)[number];
+}
+
 export function ingest(
 	repoRoot: string,
 	opts: IngestOptions = {},
 ): IngestReport {
 	const started = performance.now();
-	const discovered = discoverFiles(repoRoot);
-	const root = discovered.repoRoot;
+	const root = canonicalRoot(repoRoot);
 	const db = openDB(root, { fresh: opts.fresh ?? false });
 
-	// Pass 0: read, hash, structural-parse, extract imports.
-	const { inputs, parsed, errors } = parseFiles(root, discovered.files);
+	// Phase 1: discover + parse + persist nodes, for every language.
+	const runs: AnalyzerRun[] = [];
+	for (const analyzer of ANALYZERS) {
+		const discovered = analyzer.discoverFiles(repoRoot);
+		const units: ParsedUnit[] = [];
+		const errors: { file: string; message: string }[] = [];
+		const inputs: UnitInput[] = [];
 
-	// Pass 1: files, nodes, DECLARES edges.
-	persistFiles(db, inputs);
+		for (const abs of discovered.files) {
+			const relPath = toRelPath(discovered.repoRoot, abs);
+			try {
+				const source = readFileSync(abs, "utf8");
+				const mtimeMs = statSync(abs).mtimeMs;
+				const unit = analyzer.parseFile(relPath, abs, source);
+				units.push(unit);
+				inputs.push({
+					relPath,
+					hash: hashText(source),
+					mtimeMs,
+					symbols: unit.symbols,
+				});
+			} catch (err) {
+				errors.push({ file: relPath, message: (err as Error).message });
+			}
+		}
+		persistUnits(db, inputs);
+		runs.push({ analyzer, discovered, units, errors });
+	}
 
-	// Pass 2: IMPORTS edges — every module node now exists.
-	const imports = resolveImportEdges(
-		discovered.options,
-		root,
-		inputs.map((i) => i.relPath),
-		parsed,
-	);
-	persistEdges(db, imports.edges);
-	persistUnresolved(db, imports.unresolved);
-
-	// Pass 3: semantic edges (CALLS / REFERENCES / EXTENDS / IMPLEMENTS) over
-	// every file.
-	const bundle = createProgram(discovered.files, discovered.options);
-	const semantic = runSemantic(bundle, root, db);
-	persistEdges(db, semantic.edges);
-	persistUnresolved(db, semantic.unresolved);
-
-	// Pass 4: route nodes + HANDLES edges (needs handler function nodes to exist).
-	const routes = routePass(bundle, root, db);
-	persistRouteNodes(db, routes.routeNodes);
-	persistEdges(db, routes.edges);
-	persistUnresolved(db, routes.unresolved);
+	// Phase 2: resolve edges, with every node from every language visible.
+	const index = buildNodeIndex(db);
+	for (const { analyzer, discovered, units } of runs) {
+		const out = analyzer.resolveEdges({
+			repoRoot: discovered.repoRoot,
+			discovered,
+			units,
+			allRelPaths: units.map((u) => u.relPath),
+			index,
+		});
+		persistRouteNodes(db, out.routeNodes);
+		persistEdges(db, out.edges);
+		persistUnresolved(db, out.unresolved);
+	}
 
 	// Parse errors.
-	const recordErrors = db.transaction(() => {
+	const errors = runs.flatMap((r) => r.errors);
+	db.transaction(() => {
 		const clear = db.prepare(`DELETE FROM parse_errors WHERE file = ?`);
 		const ins = db.prepare(
 			`INSERT INTO parse_errors(file, message, at) VALUES(?, ?, ?)`,
@@ -80,31 +101,28 @@ export function ingest(
 			clear.run(e.file);
 			ins.run(e.file, e.message, now);
 		}
-	});
-	recordErrors();
+	})();
 
 	// Metadata.
 	const elapsedMs = Math.round(performance.now() - started);
-	const inputSetHash = hashText(
-		inputs
-			.map((i) => `${i.relPath}:${i.hash}`)
-			.sort()
-			.join("\n"),
-	);
+	writeInputSetHash(db);
 	const setMeta = db.prepare(
 		`INSERT INTO meta(key, value) VALUES(?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 	);
 	setMeta.run("repo_root", root);
-	setMeta.run("input_set_hash", inputSetHash);
 	setMeta.run("ingested_at", String(Date.now()));
 	setMeta.run("ingest_ms", String(elapsedMs));
 
 	const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+	const filesDiscovered = runs.reduce(
+		(n, r) => n + r.discovered.files.length,
+		0,
+	);
 	const report: IngestReport = {
 		repoRoot: root,
-		filesDiscovered: discovered.files.length,
-		filesParsed: inputs.length,
+		filesDiscovered,
+		filesParsed: runs.reduce((n, r) => n + r.units.length, 0),
 		filesErrored: errors.length,
 		nodeCount: count(`SELECT COUNT(*) AS n FROM nodes`),
 		edgeCount: count(`SELECT COUNT(*) AS n FROM edges`),
@@ -114,4 +132,21 @@ export function ingest(
 
 	db.close();
 	return report;
+}
+
+export function writeInputSetHash(db: import("../store/db.js").DB): void {
+	const rows = db.prepare(`SELECT path, hash FROM files`).all() as {
+		path: string;
+		hash: string;
+	}[];
+	const h = hashText(
+		rows
+			.map((r) => `${r.path}:${r.hash}`)
+			.sort()
+			.join("\n"),
+	);
+	db.prepare(
+		`INSERT INTO meta(key, value) VALUES('input_set_hash', ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+	).run(h);
 }

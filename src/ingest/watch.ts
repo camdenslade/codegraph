@@ -1,23 +1,21 @@
-import { sep } from "node:path";
+import { resolve, sep } from "node:path";
 import chokidar from "chokidar";
-import type ts from "typescript";
-import { discoverFiles } from "./discover.js";
 import { incrementalUpdate } from "./incremental.js";
 
 /**
- * Prime the graph, then keep it fresh: on any .ts/.tsx add/change/unlink, run a
- * debounced incremental update. The TS Program is kept warm across updates
- * (`previousProgram`) so rebuilds stay well inside the FR-INC-3 budget.
+ * Prime the graph, then keep it fresh: on any source add/change/unlink, run a
+ * debounced incremental update. Each analyzer's heavy state (a warm ts.Program)
+ * is carried across updates so rebuilds stay inside the FR-INC-3 budget.
  * Status goes to stderr; stdout is left clean in case this shares a pipe.
  */
 export async function watchRepo(repoRoot: string): Promise<void> {
-	const { repoRoot: root } = discoverFiles(repoRoot);
+	const root = resolve(repoRoot);
 
-	let warm: ts.Program | undefined;
+	let carry = new Map<string, unknown>();
 	const first = incrementalUpdate(root);
-	warm = first.program ?? warm;
+	carry = first.carry;
 	log(
-		`watching ${root} — ${first.report.nodeCount} nodes, ` +
+		`watching ${root} - ${first.report.nodeCount} nodes, ` +
 			`${first.report.edgeCount} edges`,
 	);
 
@@ -37,10 +35,9 @@ export async function watchRepo(repoRoot: string): Promise<void> {
 		running = true;
 		try {
 			const t0 = Date.now();
-			const { report, program } = incrementalUpdate(root, {
-				previousProgram: warm,
-			});
-			warm = program ?? warm;
+			const res = incrementalUpdate(root, { carry });
+			carry = res.carry;
+			const { report } = res;
 			if (!report.noop) {
 				log(
 					`+${report.added.length} ~${report.changed.length} ` +

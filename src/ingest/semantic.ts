@@ -88,11 +88,11 @@ export function semanticPass(
 				const targetId = idx.idForDeclaration(decl);
 				if (targetId)
 					addEdge(owner(), targetId, "CALLS", "resolved", rel, line);
-				// else: in-repo but not a tracked node (local helper, nested arrow) — ignore
+				// else: in-repo but not a tracked node (local helper, nested arrow) - ignore
 				return;
 			}
 
-			// No declaration at all — genuinely unresolved (any-typed, dynamic).
+			// No declaration at all - genuinely unresolved (any-typed, dynamic).
 			const name = calleeName(callee);
 			if (!name) return;
 			const cands = nameIndex.get(name);

@@ -28,9 +28,19 @@ export function cacheRoot(): string {
 	}
 }
 
+/** Canonical absolute path. Normalizes Windows drive-letter case so the same
+ * repo always maps to the same cache no matter how the path was typed. */
+export function canonicalRoot(repoRoot: string): string {
+	let abs = resolve(repoRoot);
+	if (process.platform === "win32" && /^[a-z]:/.test(abs)) {
+		abs = abs[0]!.toUpperCase() + abs.slice(1);
+	}
+	return abs;
+}
+
 /** Cache file for a repo, keyed by its absolute path. */
 export function dbPathForRepo(repoRoot: string): string {
-	const abs = resolve(repoRoot);
+	const abs = canonicalRoot(repoRoot);
 	const hash = createHash("sha256").update(abs).digest("hex").slice(0, 12);
 	const dir = join(cacheRoot(), `${basename(abs)}-${hash}`);
 	mkdirSync(dir, { recursive: true });

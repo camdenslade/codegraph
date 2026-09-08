@@ -1,24 +1,21 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { canonicalRoot } from "../store/db.js";
 import { performance } from "node:perf_hooks";
-import type ts from "typescript";
+import { ANALYZERS } from "../lang/registry.js";
+import type { LanguageAnalyzer, ParsedUnit } from "../lang/types.js";
 import { openDB, type DB } from "../store/db.js";
 import {
 	hashText,
 	persistEdges,
-	persistFiles,
 	persistRouteNodes,
+	persistUnits,
 	persistUnresolved,
 	toRelPath,
 	type EdgeRow,
+	type UnitInput,
 } from "../store/persist.js";
-import { discoverFiles } from "./discover.js";
-import {
-	parseFiles,
-	resolveImportEdges,
-	routePass,
-	runSemantic,
-} from "./passes.js";
-import { createProgram, type ProgramBundle } from "./program.js";
+import { buildNodeIndex } from "./node-index.js";
+import { writeInputSetHash } from "./index.js";
 
 export interface RefreshReport {
 	repoRoot: string;
@@ -34,34 +31,38 @@ export interface RefreshReport {
 }
 
 export interface RefreshOptions {
-	/** Reuse a warm Program (watch mode) for a much faster TS rebuild. */
-	previousProgram?: ts.Program;
+	/** Analyzer id -> carried state (warm ts.Program) from a previous run. */
+	carry?: Map<string, unknown>;
 }
 
 export interface RefreshOutcome {
 	report: RefreshReport;
-	/** The Program built this run, or undefined on a no-op. Watch mode keeps it. */
-	program: ts.Program | undefined;
+	/** Analyzer id -> new carried state. Watch mode keeps this. */
+	carry: Map<string, unknown>;
+}
+
+interface Discovered {
+	analyzer: LanguageAnalyzer;
+	repoRoot: string;
+	absByRel: Map<string, string>;
 }
 
 /**
- * Re-scan the repo, reparse only files whose content hash changed (or are new),
- * and drop files that disappeared. Inbound edges from files we do NOT reparse
- * are snapshotted and restored, so a change to X keeps `A -> X` for unchanged A
- * without reprocessing A. Full re-resolution of importers is deferred to a full
- * `ingest` (FR-INC-2).
+ * Reparse only files whose content hash changed (or are new), drop files that
+ * disappeared. Inbound edges from files we do NOT reparse are snapshotted and
+ * restored (FR-INC-2). Full re-resolution of importers is deferred to `ingest`.
  */
 export function incrementalUpdate(
 	repoRoot: string,
 	opts: RefreshOptions = {},
 ): RefreshOutcome {
 	const started = performance.now();
-	const discovered = discoverFiles(repoRoot);
-	const root = discovered.repoRoot;
+	const root = canonicalRoot(repoRoot);
 	const db = openDB(root);
+	const carryOut = new Map<string, unknown>();
 
 	try {
-		// 1. Diff current files against the stored hashes.
+		// 1. Discover across all languages, diff against stored hashes.
 		const stored = new Map(
 			(
 				db.prepare(`SELECT path, hash FROM files`).all() as {
@@ -71,40 +72,49 @@ export function incrementalUpdate(
 			).map((r) => [r.path, r.hash] as const),
 		);
 
+		const discovered: Discovered[] = [];
+		const relToAnalyzer = new Map<string, LanguageAnalyzer>();
 		const currentRel = new Set<string>();
-		const absByRel = new Map<string, string>();
 		const added: string[] = [];
 		const changed: string[] = [];
 		let unchanged = 0;
 
-		for (const abs of discovered.files) {
-			const rel = toRelPath(root, abs);
-			currentRel.add(rel);
-			absByRel.set(rel, abs);
-			let hash: string;
-			try {
-				hash = hashText(readFileSync(abs, "utf8"));
-			} catch {
-				continue; // unreadable right now; leave whatever we had
+		for (const analyzer of ANALYZERS) {
+			const d = analyzer.discoverFiles(repoRoot);
+			const absByRel = new Map<string, string>();
+			for (const abs of d.files) {
+				const rel = toRelPath(d.repoRoot, abs);
+				absByRel.set(rel, abs);
+				currentRel.add(rel);
+				relToAnalyzer.set(rel, analyzer);
+				let hash: string;
+				try {
+					hash = hashText(readFileSync(abs, "utf8"));
+				} catch {
+					continue;
+				}
+				const prev = stored.get(rel);
+				if (prev === undefined) added.push(rel);
+				else if (prev !== hash) changed.push(rel);
+				else unchanged++;
 			}
-			const prev = stored.get(rel);
-			if (prev === undefined) added.push(rel);
-			else if (prev !== hash) changed.push(rel);
-			else unchanged++;
+			discovered.push({ analyzer, repoRoot: d.repoRoot, absByRel });
 		}
 		const removed = [...stored.keys()].filter((p) => !currentRel.has(p));
 		const toReparse = [...added, ...changed];
 
 		if (toReparse.length === 0 && removed.length === 0) {
-			const report = countsReport(db, root, {
-				added,
-				changed,
-				removed,
-				unchanged,
-				elapsedMs: Math.round(performance.now() - started),
-				noop: true,
-			});
-			return { report, program: undefined };
+			return {
+				report: countsReport(db, root, {
+					added,
+					changed,
+					removed,
+					unchanged,
+					elapsedMs: Math.round(performance.now() - started),
+					noop: true,
+				}),
+				carry: carryOut,
+			};
 		}
 
 		// 2. Snapshot inbound edges from files we will NOT reparse (FR-INC-2).
@@ -120,58 +130,71 @@ export function incrementalUpdate(
 			)
 			.all({ aff: affected }) as EdgeRow[];
 
-		// 3. Drop vanished files; cascade clears their nodes/edges/unresolved.
+		// 3. Drop vanished files (cascade clears nodes/edges/unresolved).
 		const dropFile = db.prepare(`DELETE FROM files WHERE path = ?`);
 		db.transaction((paths: string[]) => {
 			for (const p of paths) dropFile.run(p);
 		})(removed);
 
-		// 4. Reparse changed/added. persistFiles deletes each file's old nodes
-		//    first, so its outbound edges + unresolved go with them.
-		const { inputs, parsed, errors } = parseFiles(
-			root,
-			toReparse.map((rel) => absByRel.get(rel)!),
-		);
-		persistFiles(db, inputs);
+		// 4. Reparse changed/added, grouped by analyzer.
+		const errors: { file: string; message: string }[] = [];
+		const unitsByAnalyzer = new Map<LanguageAnalyzer, ParsedUnit[]>();
+		const inputs: UnitInput[] = [];
 
-		// 5. IMPORTS for reparsed files (resolver sees the full current set).
-		const imports = resolveImportEdges(
-			discovered.options,
-			root,
-			[...currentRel],
-			parsed,
-		);
-		persistEdges(db, imports.edges);
-		persistUnresolved(db, imports.unresolved);
+		for (const rel of toReparse) {
+			const analyzer = relToAnalyzer.get(rel);
+			const abs = discovered
+				.find((d) => d.analyzer === analyzer)
+				?.absByRel.get(rel);
+			if (!analyzer || !abs) continue;
+			try {
+				const source = readFileSync(abs, "utf8");
+				const mtimeMs = statSync(abs).mtimeMs;
+				const unit = analyzer.parseFile(rel, abs, source);
+				(
+					unitsByAnalyzer.get(analyzer) ??
+					unitsByAnalyzer.set(analyzer, []).get(analyzer)!
+				).push(unit);
+				inputs.push({
+					relPath: rel,
+					hash: hashText(source),
+					mtimeMs,
+					symbols: unit.symbols,
+				});
+			} catch (err) {
+				errors.push({ file: rel, message: (err as Error).message });
+			}
+		}
+		persistUnits(db, inputs);
 
-		// 6. Semantic pass: full Program (checker needs every file), but walk
-		//    only the reparsed files.
-		const built = createProgram(
-			discovered.files,
-			discovered.options,
-			opts.previousProgram,
-		);
-		const reparseSet = new Set(toReparse);
-		const scoped: ProgramBundle = {
-			program: built.program,
-			checker: built.checker,
-			sourceFiles: built.sourceFiles.filter((sf) =>
-				reparseSet.has(toRelPath(root, sf.fileName)),
-			),
-		};
-		const semantic = runSemantic(scoped, root, db);
-		persistEdges(db, semantic.edges);
-		persistUnresolved(db, semantic.unresolved);
+		// 5. Resolve edges for the reparsed units of each affected analyzer.
+		const index = buildNodeIndex(db);
+		for (const { analyzer, repoRoot: aRoot } of discovered) {
+			const units = unitsByAnalyzer.get(analyzer);
+			if (!units || units.length === 0) continue;
+			const d = analyzer.discoverFiles(repoRoot); // full current file set
+			const out = analyzer.resolveEdges({
+				repoRoot: aRoot,
+				discovered: {
+					repoRoot: aRoot,
+					files: d.files,
+					options: d.options,
+				},
+				units,
+				allRelPaths: d.files.map((f) => toRelPath(aRoot, f)),
+				index,
+				carry: opts.carry?.get(analyzer.id),
+			});
+			persistRouteNodes(db, out.routeNodes);
+			persistEdges(db, out.edges);
+			persistUnresolved(db, out.unresolved);
+			carryOut.set(analyzer.id, out.carry);
+		}
 
-		const routes = routePass(scoped, root, db);
-		persistRouteNodes(db, routes.routeNodes);
-		persistEdges(db, routes.edges);
-		persistUnresolved(db, routes.unresolved);
-
-		// 7. Restore inbound edges whose endpoints both still exist.
+		// 6. Restore inbound edges whose endpoints both still exist.
 		restoreInbound(db, inbound);
 
-		// 8. Parse errors for the reparsed set.
+		// 7. Parse errors.
 		db.transaction(() => {
 			const clear = db.prepare(`DELETE FROM parse_errors WHERE file = ?`);
 			const ins = db.prepare(
@@ -182,18 +205,24 @@ export function incrementalUpdate(
 			for (const e of errors) ins.run(e.file, e.message, now);
 		})();
 
-		// 9. Metadata.
-		refreshMeta(db);
+		// 8. Metadata.
+		writeInputSetHash(db);
+		db.prepare(
+			`INSERT INTO meta(key, value) VALUES('refreshed_at', ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		).run(String(Date.now()));
 
-		const report = countsReport(db, root, {
-			added,
-			changed,
-			removed,
-			unchanged,
-			elapsedMs: Math.round(performance.now() - started),
-			noop: false,
-		});
-		return { report, program: built.program };
+		return {
+			report: countsReport(db, root, {
+				added,
+				changed,
+				removed,
+				unchanged,
+				elapsedMs: Math.round(performance.now() - started),
+				noop: false,
+			}),
+			carry: carryOut,
+		};
 	} finally {
 		db.close();
 	}
@@ -212,25 +241,6 @@ function restoreInbound(db: DB, edges: EdgeRow[]): void {
 			if (exists.get(e.src) && exists.get(e.dst)) insert.run(e);
 		}
 	})(edges);
-}
-
-function refreshMeta(db: DB): void {
-	const rows = db.prepare(`SELECT path, hash FROM files`).all() as {
-		path: string;
-		hash: string;
-	}[];
-	const inputSetHash = hashText(
-		rows
-			.map((r) => `${r.path}:${r.hash}`)
-			.sort()
-			.join("\n"),
-	);
-	const set = db.prepare(
-		`INSERT INTO meta(key, value) VALUES(?, ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-	);
-	set.run("input_set_hash", inputSetHash);
-	set.run("refreshed_at", String(Date.now()));
 }
 
 function countsReport(

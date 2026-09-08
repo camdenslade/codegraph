@@ -17,9 +17,12 @@ program
 	.name("codegraph")
 	.description("Semantic code graph, served over MCP")
 	.version("0.0.1")
-	.option("-C, --repo <path>", "repo root for query commands", ".");
+	.option("-C, --repo <path>", "repo root (default: cwd)", ".");
 
 const repoRoot = (): string => program.opts().repo as string;
+
+/** Every command takes an optional [path]; it falls back to -C / --repo. */
+const resolveRepo = (path?: string): string => path ?? repoRoot();
 
 function resolveSymbolOrExit(query: string): string {
 	const cands = findSymbol(repoRoot(), query);
@@ -31,7 +34,7 @@ function resolveSymbolOrExit(query: string): string {
 	const tied = cands.filter((c) => c.score === top.score);
 	if (tied.length > 1) {
 		console.error(
-			`"${query}" is ambiguous — disambiguate with file.ts:name or the qualified name:`,
+			`"${query}" is ambiguous - disambiguate with file.ts:name or the qualified name:`,
 		);
 		for (const c of tied.slice(0, 10)) {
 			console.error(
@@ -46,9 +49,9 @@ function resolveSymbolOrExit(query: string): string {
 program
 	.command("ingest")
 	.description("full build of the graph for a repo")
-	.argument("<path>", "repo root")
-	.action((path: string) => {
-		const r = ingest(path, { fresh: true }); // FR-CLI-1: ingest is always a full build
+	.argument("[path]", "repo root")
+	.action((path?: string) => {
+		const r = ingest(resolveRepo(path), { fresh: true }); // FR-CLI-1: ingest is always a full build
 		console.log(
 			`parsed ${r.filesParsed}/${r.filesDiscovered} files · ${r.nodeCount} nodes · ` +
 				`${r.edgeCount} edges · ${r.unresolvedCount} unresolved · ${r.filesErrored} errors · ${r.elapsedMs}ms`,
@@ -58,14 +61,14 @@ program
 program
 	.command("refresh")
 	.description("incremental update: reparse only changed/added/removed files")
-	.argument("[path]", "repo root", ".")
+	.argument("[path]", "repo root")
 	.option("--watch", "keep running, re-refresh on file changes (debounced)")
-	.action(async (path: string, opts: { watch?: boolean }) => {
+	.action(async (path: string | undefined, opts: { watch?: boolean }) => {
 		if (opts.watch) {
-			await watchRepo(path);
+			await watchRepo(resolveRepo(path));
 			return;
 		}
-		const { report } = incrementalUpdate(path);
+		const { report } = incrementalUpdate(resolveRepo(path));
 		if (report.noop) {
 			console.log("nothing changed");
 			return;
@@ -79,18 +82,18 @@ program
 program
 	.command("stats")
 	.description("node/edge counts, resolution rate, ingest time")
-	.argument("[path]", "repo root", ".")
-	.action((path: string) => {
-		printStats(getStats(path));
+	.argument("[path]", "repo root")
+	.action((path?: string) => {
+		printStats(getStats(resolveRepo(path)));
 	});
 
 program
 	.command("skeleton")
-	.description("module grapg + per-module exports (FR-SLICE-6)")
-	.argument("[path]", "repo root", ".")
+	.description("module graph + per-module exports (FR-SLICE-6)")
+	.argument("[path]", "repo root")
 	.option("--json", "emit JSON instead of text", false)
-	.action((path: string, opts: { json: boolean }) => {
-		const sk = getSkeleton(path);
+	.action((path: string | undefined, opts: { json: boolean }) => {
+		const sk = getSkeleton(resolveRepo(path));
 		if (opts.json) {
 			console.log(JSON.stringify(sk, null, 2));
 			return;

@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openDB } from "../store/db.js";
 import { LineResolver } from "./lines.js";
 
@@ -115,39 +113,4 @@ function isSubsequence(needle: string, hay: string): boolean {
 		if (i === needle.length) return true;
 	}
 	return false;
-}
-
-/** Byte offset -> 1-based line. Caches line-start offsets per file. */
-function offsetToLine(
-	repoRoot: string,
-	file: string,
-	offset: number,
-	cache: Map<string, number[]>,
-): number {
-	let starts = cache.get(file);
-	if (!starts) {
-		starts = [0];
-		try {
-			const text = readFileSync(join(repoRoot, file), "utf8");
-			for (let i = 0; i < text.length; i++) {
-				if (text[i] === "\n") starts.push(i + 1);
-			}
-		} catch {
-			/* file gone; treat as one line */
-		}
-		cache.set(file, starts);
-	}
-	let lo = 0;
-	let hi = starts.length - 1;
-	let ans = 0;
-	while (lo <= hi) {
-		const mid = (lo + hi) >> 1;
-		if (starts[mid]! <= offset) {
-			ans = mid;
-			lo = mid + 1;
-		} else {
-			hi = mid - 1;
-		}
-	}
-	return ans + 1;
 }

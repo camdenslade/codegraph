@@ -27,7 +27,7 @@ const TOOLS = [
 		description:
 			"Callers, callees, imports and type relations around a symbol, within N hops. " +
 			"Signatures and file:line only, never bodies. Treat it as a lead, not ground " +
-			"truth — check meta.truncated and meta.unresolved_in_scope before concluding.",
+			"truth - check meta.truncated and meta.unresolved_in_scope before concluding.",
 		inputSchema: {
 			type: "object",
 			properties: {

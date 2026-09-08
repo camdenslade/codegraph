@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { relative } from "node:path";
 import type { DB } from "./db.js";
-import type { RawSymbol, StructuralResult } from "../ingest/structural.js";
+import type { LangSymbol } from "../lang/types.js";
 
 export function toRelPath(repoRoot: string, absPath: string): string {
 	return relative(repoRoot, absPath).split(/[\\/]/).join("/");
@@ -48,8 +48,8 @@ export function moduleNodeId(relPath: string): string {
 	return nodeId("module", relPath);
 }
 
-function qualifiedName(relPath: string, sym: RawSymbol): string {
-	return sym.kind === "method" && sym.container
+function qualifiedName(relPath: string, sym: LangSymbol): string {
+	return sym.container
 		? `${relPath}:${sym.container}.${sym.name}`
 		: `${relPath}:${sym.name}`;
 }
@@ -60,15 +60,20 @@ const INSERT_EDGE_SQL = `
   ON CONFLICT(src, dst, kind) DO UPDATE SET
     resolution = excluded.resolution, file = excluded.file, line = excluded.line`;
 
-export interface PersistInput {
+export interface UnitInput {
 	relPath: string;
 	hash: string;
 	mtimeMs: number;
-	structural: StructuralResult;
+	symbols: LangSymbol[];
 }
 
-/** Replace all rows for each file: files row, module node, symbol nodes, DECLARES edges. */
-export function persistFiles(db: DB, inputs: PersistInput[]): void {
+/**
+ * Replace every row for each file: the files row, a `module` node for the file,
+ * one node per declared symbol, and a DECLARES edge module -> symbol. Deleting
+ * the file's old nodes first cascades away its old edges + unresolved rows.
+ * Language-neutral - the analyzer supplies `symbols`.
+ */
+export function persistUnits(db: DB, units: UnitInput[]): void {
 	const upsertFile = db.prepare(
 		`INSERT INTO files(path, hash, mtime, parsed_at)
      VALUES(@path, @hash, @mtime, @parsed_at)
@@ -83,9 +88,9 @@ export function persistFiles(db: DB, inputs: PersistInput[]): void {
 	);
 	const insertEdge = db.prepare(INSERT_EDGE_SQL);
 
-	const run = db.transaction((rows: PersistInput[]) => {
+	const run = db.transaction((rows: UnitInput[]) => {
 		const now = Date.now();
-		for (const { relPath, hash, mtimeMs, structural } of rows) {
+		for (const { relPath, hash, mtimeMs, symbols } of rows) {
 			clearFileNodes.run(relPath);
 			upsertFile.run({
 				path: relPath,
@@ -108,7 +113,7 @@ export function persistFiles(db: DB, inputs: PersistInput[]): void {
 				exported: 0,
 			});
 
-			for (const sym of structural.symbols) {
+			for (const sym of symbols) {
 				const qn = qualifiedName(relPath, sym);
 				const id = nodeId(sym.kind, qn);
 				insertNode.run({
@@ -135,10 +140,10 @@ export function persistFiles(db: DB, inputs: PersistInput[]): void {
 		}
 	});
 
-	run(inputs);
+	run(units);
 }
 
-/** Generic edge upsert — IMPORTS now, CALLS/EXTENDS/etc. later. */
+/** Generic edge upsert - IMPORTS now, CALLS/EXTENDS/etc. later. */
 export function persistEdges(db: DB, rows: EdgeRow[]): void {
 	const insert = db.prepare(INSERT_EDGE_SQL);
 	const run = db.transaction((es: EdgeRow[]) => {

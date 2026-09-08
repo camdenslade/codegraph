@@ -23,7 +23,7 @@ export interface SerializedResult {
 
 export interface SerializeOptions {
 	format?: "json" | "text";
-	targetTokens?: number; // soft goal — FR-SLICE-3
+	targetTokens?: number; // soft goal - FR-SLICE-3
 	maxTokens?: number; // hard ceiling
 }
 
@@ -44,15 +44,16 @@ export function serializeNeighborhood(
 	const target = opts.targetTokens ?? 1500;
 	const max = opts.maxTokens ?? 4000;
 
-	let chosen = buildLevels(nh)[0]!;
+	const levels = buildLevels(nh);
+	let chosen: Level = levels[0]!;
 	let meta = buildMeta(chosen, nh);
 	let content = render(nh.seed, chosen, meta, format);
 
-	for (const level of buildLevels(nh)) {
-		chosen = level;
-		meta = buildMeta(level, nh);
-		content = render(nh.seed, level, meta, format);
-		if (estTokens(content) <= target) break;
+	// Walk down the degradation ladder until we're under the soft target.
+	for (let i = 1; i < levels.length && estTokens(content) > target; i++) {
+		chosen = levels[i]!;
+		meta = buildMeta(chosen, nh);
+		content = render(nh.seed, chosen, meta, format);
 	}
 
 	if (estTokens(content) > max) {

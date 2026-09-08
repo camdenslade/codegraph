@@ -1,0 +1,69 @@
+import { cpSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
+import { ingest } from "../src/ingest/index.js";
+import { dumpGraph } from "../src/query/dump.js";
+
+const here = fileURLToPath(new URL(".", import.meta.url));
+
+describe("java analyzer (M1 level)", () => {
+	let dump: ReturnType<typeof dumpGraph>;
+
+	beforeAll(() => {
+		process.env.CODEGRAPH_CACHE_DIR = mkdtempSync(
+			join(tmpdir(), "cg-java-cache-"),
+		);
+		const repo = mkdtempSync(join(tmpdir(), "cg-java-repo-"));
+		cpSync(join(here, "fixtures", "java-app"), repo, { recursive: true });
+		ingest(repo, { fresh: true });
+		dump = dumpGraph(repo);
+	});
+
+	it("extracts types and methods", () => {
+		const byKind = (k: string) =>
+			dump.nodes
+				.filter((n) => n.kind === k)
+				.map((n) => n.qualified_name)
+				.sort();
+		expect(byKind("class")).toEqual([
+			"src/main/java/com/x/model/User.java:User",
+			"src/main/java/com/x/repo/UserRepo.java:UserRepo",
+		]);
+		expect(byKind("interface")).toEqual([
+			"src/main/java/com/x/repo/Repo.java:Repo",
+		]);
+		expect(byKind("method")).toContain(
+			"src/main/java/com/x/repo/UserRepo.java:UserRepo.all",
+		);
+	});
+
+	it("resolves an in-repo import to a module edge", () => {
+		const imports = dump.edges
+			.filter((e) => e.kind === "IMPORTS")
+			.map((e) => `${e.src} -> ${e.dst}`);
+		expect(imports).toContain(
+			"module:src/main/java/com/x/repo/UserRepo.java -> module:src/main/java/com/x/model/User.java",
+		);
+	});
+
+	it("resolves IMPLEMENTS via same-package lookup", () => {
+		const impl = dump.edges.find((e) => e.kind === "IMPLEMENTS");
+		expect(impl).toBeDefined();
+		expect(impl!.src).toBe(
+			"class:src/main/java/com/x/repo/UserRepo.java:UserRepo",
+		);
+		expect(impl!.dst).toBe(
+			"interface:src/main/java/com/x/repo/Repo.java:Repo",
+		);
+		expect(impl!.resolution).toBe("resolved");
+	});
+
+	it("records java.util.List as an unresolved import", () => {
+		const ext = dump.unresolved.filter(
+			(u) => u.kind === "import" && u.text === "java.util.List",
+		);
+		expect(ext.length).toBeGreaterThan(0);
+	});
+});

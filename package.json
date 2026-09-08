@@ -1,37 +1,42 @@
 {
-	"name": "codegraph",
-	"version": "0.0.1",
-	"description": "Parse a codebase into a semantic graph and serve it over MCP.",
-	"type": "module",
-	"bin": {
-		"codegraph": "./dist/cli.js"
-	},
-	"scripts": {
-		"dev": "tsx src/cli.ts",
-		"build": "tsc -p tsconfig.json",
-		"test": "vitest run",
-		"test:watch": "vitest",
-		"lint": "eslint src",
-		"format": "prettier --write ."
-	},
-	"engines": {
-		"node": ">=20"
-	},
-	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.0.4",
-		"better-sqlite3": "^11.7.0",
-		"chokidar": "^5.0.0",
-		"commander": "^12.1.0",
-		"ignore": "^7.0.8",
-		"tree-sitter": "^0.21.1",
-		"tree-sitter-typescript": "^0.23.0",
-		"typescript": "^5.7.2"
-	},
-	"devDependencies": {
-		"@types/better-sqlite3": "^7.6.12",
-		"@types/node": "^22.10.2",
-		"prettier": "^3.9.6",
-		"tsx": "^4.19.2",
-		"vitest": "^5.0.0"
-	}
+  "name": "codegraph",
+  "version": "0.0.1",
+  "description": "Parse a codebase into a semantic graph and serve it over MCP.",
+  "type": "module",
+  "bin": {
+    "codegraph": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src eval",
+    "format": "prettier --write .",
+    "check": "tsc --noEmit && eslint src && vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.7.0",
+    "chokidar": "^5.0.0",
+    "commander": "^12.1.0",
+    "ignore": "^7.0.8",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-typescript": "^0.23.0",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.19.2",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  }
 }

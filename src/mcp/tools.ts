@@ -38,7 +38,7 @@ function candidatesText(query: string, cands: SymbolCandidate[]): string {
 		return `No symbol matches "${query}". Call find_symbol with a partial name.`;
 	}
 	const lines = [
-		`"${query}" is ambiguous — call again with a qualified name or file.ts:name:`,
+		`"${query}" is ambiguous - call again with a qualified name or file.ts:name:`,
 	];
 	for (const c of cands) {
 		lines.push(`  ${c.qualifiedName}  (${c.kind})  ${c.file}:${c.line}`);
