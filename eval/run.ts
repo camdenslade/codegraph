@@ -90,8 +90,10 @@ async function main(): Promise<void> {
 
 	const ingested = new Set<string>();
 	const scored: Scored[] = [];
+	let aborted = false;
 
 	for (const task of tasks) {
+		if (aborted) break;
 		const repoRoot = repoRootFor(task);
 		if (!ingested.has(repoRoot)) {
 			ensureIngested(repoRoot);
@@ -117,14 +119,29 @@ async function main(): Promise<void> {
 				error: out.error,
 			};
 			const s = score(task, run);
-			scored.push(s);
 			const secs = ((Date.now() - t0) / 1000).toFixed(0);
+
+			if (out.error === "rate limited / out of credits") {
+				process.stderr.write(`aborted: ${out.error}\n`);
+				process.stderr.write(
+					"the model is unavailable; stopping the sweep and reporting what ran.\n",
+				);
+				aborted = true;
+				break;
+			}
+
+			scored.push(s);
 			process.stderr.write(
 				`${s.pass ? "pass" : "FAIL"} ` +
 					`(${out.metrics.totalTokens} tok, ${out.metrics.fileReads} reads, ${secs}s` +
 					`${out.error ? `, ${out.error}` : ""})\n`,
 			);
 		}
+	}
+
+	if (scored.length === 0) {
+		console.error("no runs completed");
+		process.exit(1);
 	}
 
 	const report = buildReport(scored);

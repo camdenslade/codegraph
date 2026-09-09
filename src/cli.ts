@@ -232,23 +232,30 @@ program
 		db.close();
 
 		if (count === 0) {
+			// Nothing to serve until the graph exists: ingest before connecting.
 			process.stderr.write("codegraph: cold cache, ingesting…\n");
 			const r = ingest(root, { fresh: true });
 			process.stderr.write(
 				`codegraph: ${r.filesParsed} files, ${r.nodeCount} nodes, ` +
 					`${r.edgeCount} edges in ${r.elapsedMs}ms\n`,
 			);
-		} else {
-			const { report } = incrementalUpdate(root);
-			if (!report.noop) {
-				process.stderr.write(
-					`codegraph: refreshed (+${report.added.length} ~${report.changed.length} ` +
-						`-${report.removed.length}) in ${report.elapsedMs}ms\n`,
-				);
-			}
+			await runServer(root);
+			return;
 		}
 
+		// Warm cache: connect first so the MCP client never waits on the
+		// refresh (a slow first spawn used to trip its startup timeout, and the
+		// client would then fall back with no graph at all). The refresh runs
+		// synchronously right after connect, so the first tool call queues
+		// behind it and still sees fresh data.
 		await runServer(root);
+		const { report } = incrementalUpdate(root);
+		if (!report.noop) {
+			process.stderr.write(
+				`codegraph: refreshed (+${report.added.length} ~${report.changed.length} ` +
+					`-${report.removed.length}) in ${report.elapsedMs}ms\n`,
+			);
+		}
 	});
 
 program.parseAsync();

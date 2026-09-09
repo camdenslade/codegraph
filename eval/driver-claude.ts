@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
@@ -83,7 +83,20 @@ export const claudeDriver: AgentDriver = {
 					},
 				}),
 			);
-			args.push("--mcp-config", cfg, "--allowedTools", "mcp__codegraph");
+			args.push(
+				"--mcp-config",
+				cfg,
+				"--allowedTools",
+				"mcp__codegraph",
+				"--append-system-prompt",
+				"You have a CodeGraph MCP server: tools prefixed `mcp__codegraph__` " +
+					"(find_symbol, get_symbol_neighborhood, find_path, get_edit_impact, " +
+					"get_architectural_skeleton, refresh). For structural questions - callers, " +
+					"callees, paths, blast radius, architecture - use these instead of grepping " +
+					"and reading files. Call find_symbol first to resolve a name, then the " +
+					"relevant graph tool. Fall back to Read/Grep only when a result is " +
+					"truncated or the graph cannot answer.",
+			);
 		} else {
 			args.push(
 				"--disallowedTools",
@@ -123,9 +136,79 @@ export const claudeDriver: AgentDriver = {
 			})
 			.filter((e): e is Record<string, unknown> => e !== null);
 
-		return { ...reduceEvents(events, Date.now() - t0), transcript: events };
+		const reduced = reduceEvents(events, Date.now() - t0);
+		return {
+			...reduced,
+			transcript: events,
+			error:
+				runError(events) ??
+				(req.condition === "B" ? mcpNotConnected(events) : undefined),
+		};
 	},
 };
+
+// Result subtypes that mean the agent stopped on its own budget, not that the
+// model was unavailable. These score as an ordinary FAIL; the sweep continues.
+const BENIGN_RESULT_SUBTYPES = new Set([
+	"success",
+	"error_max_turns",
+	"error_during_execution",
+]);
+
+/** A short description of how a run ended abnormally, or undefined if it was fine. */
+function runError(events: Record<string, unknown>[]): string | undefined {
+	if (isModelUnavailable(events)) return "rate limited / out of credits";
+	const result = events.find((e) => e.type === "result") as
+		| { subtype?: string; is_error?: boolean }
+		| undefined;
+	if (!result) {
+		return events.length === 0 ? "no output from claude" : undefined;
+	}
+	if (result.subtype && !BENIGN_RESULT_SUBTYPES.has(result.subtype)) {
+		return `model error (${result.subtype})`;
+	}
+	if (result.subtype && result.subtype !== "success") {
+		return result.subtype; // e.g. "error_max_turns" - shown, not fatal
+	}
+	return undefined;
+}
+
+/**
+ * True only when the run ended because the model itself was unavailable - a
+ * blocking rate-limit / exhausted-credits signal. `run.ts` aborts the sweep on
+ * this so it does not burn the rest of the quota on empty runs. A plain
+ * out-of-turns stop is NOT this.
+ */
+function isModelUnavailable(events: Record<string, unknown>[]): boolean {
+	const rl = [...events]
+		.reverse()
+		.find((e) => e.type === "rate_limit_event") as
+		| {
+				rate_limit_info?: { status?: string; overageStatus?: string };
+		  }
+		| undefined;
+	const info = rl?.rate_limit_info;
+	if (!info?.status) return false;
+	// `status` is "allowed" / "allowed_warning" normally; anything else
+	// (e.g. "rejected", "blocked") means the request was refused. A rejected
+	// `overageStatus` on its own is not blocking - it just means overage
+	// billing is off while the base quota still has room.
+	return !/^allowed/.test(info.status);
+}
+
+/** If the codegraph MCP server did not connect, return a short reason. */
+function mcpNotConnected(
+	events: Record<string, unknown>[],
+): string | undefined {
+	const init = events.find(
+		(e) => e.type === "system" && e.subtype === "init",
+	);
+	const servers = (init?.mcp_servers ?? []) as { name: string; status: string }[];
+	const cg = servers.find((s) => s.name === "codegraph");
+	if (!cg) return "codegraph MCP not present in init";
+	if (cg.status !== "connected") return `codegraph MCP ${cg.status}`;
+	return undefined;
+}
 
 function spawnCollect(
 	bin: string,
@@ -134,12 +217,23 @@ function spawnCollect(
 	timeoutMs: number,
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const p = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+		const p = spawn(bin, args, {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			env: {
+				...process.env,
+				// The codegraph MCP server can take a few seconds to spin up on
+				// a cold Node process; keep the client from giving up on it.
+				MCP_TIMEOUT: process.env.MCP_TIMEOUT ?? "60000",
+				MCP_TOOL_TIMEOUT: process.env.MCP_TOOL_TIMEOUT ?? "120000",
+			},
+		});
 		let stdout = "";
 		let stderr = "";
 		let timedOut = false;
 		const timer = setTimeout(() => {
 			timedOut = true;
+			killTree(p.pid);
 			p.kill("SIGKILL");
 		}, timeoutMs);
 
@@ -151,6 +245,10 @@ function spawnCollect(
 		});
 		p.on("close", (code) => {
 			clearTimeout(timer);
+			// `claude` spawns the MCP server as a child; on Windows it is not
+			// always reaped when the parent exits. Make sure it is gone before
+			// the next task spawns its own.
+			killTree(p.pid);
 			if (timedOut) {
 				// Return partial output so the run still scores, flagged.
 				resolve(stdout);
@@ -163,6 +261,22 @@ function spawnCollect(
 				);
 		});
 	});
+}
+
+/** Best-effort kill of a process and its descendants. */
+function killTree(pid: number | undefined): void {
+	if (!pid) return;
+	try {
+		if (platform() === "win32") {
+			spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+				stdio: "ignore",
+			});
+		} else {
+			process.kill(-pid, "SIGKILL");
+		}
+	} catch {
+		/* already gone */
+	}
 }
 
 function zero(): RunMetrics {
